@@ -3,7 +3,7 @@ import { Card, Table, Tag, Progress, Row, Col, Alert, Button, Spin, Modal, messa
 import { DownloadOutlined, EyeOutlined, ClusterOutlined, BarChartOutlined } from '@ant-design/icons';
 import { saveAs } from 'file-saver';
 import ClusterChart from '../components/ClusterChart';
-import { getAnalysisResults, getWeldmentFiles } from '../services/api';
+import { getAnalysisResults } from '../services/api';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 
 const ResultsPage = () => {
@@ -11,7 +11,6 @@ const ResultsPage = () => {
   const [loading, setLoading] = useState(true);
   const [clusterModalVisible, setClusterModalVisible] = useState(false);
   const [selectedCluster, setSelectedCluster] = useState(null);
-  const [weldmentData, setWeldmentData] = useState([]);
   const { analysisId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -19,6 +18,7 @@ const ResultsPage = () => {
   useEffect(() => {
     // Check if we have results passed via state (from AnalysisPage)
     if (location.state?.analysisResults) {
+      console.log('Results from state:', location.state.analysisResults);
       setAnalysisResults(location.state.analysisResults);
       setLoading(false);
     } else if (analysisId) {
@@ -26,7 +26,6 @@ const ResultsPage = () => {
     } else {
       setLoading(false);
     }
-    loadWeldmentData();
   }, [analysisId, location.state]);
 
   const loadAnalysisResults = async () => {
@@ -41,25 +40,6 @@ const ResultsPage = () => {
       message.error('Failed to load analysis results');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadWeldmentData = async () => {
-    try {
-      const response = await getWeldmentFiles();
-      if (response.data && response.data.length > 0) {
-        // In a real app, you'd fetch the actual data points from the analysis
-        // For now, we'll use mock data that matches your file structure
-        setWeldmentData([
-          { assy_pn: 'A35631060', total_height_mm: 210.4, outer_dia_mm: 54.6 },
-          { assy_pn: 'A35651785', total_height_mm: 210.4, outer_dia_mm: 50 },
-          { assy_pn: 'A45611660', total_height_mm: 202, outer_dia_mm: 50 },
-          { assy_pn: 'A35671107', total_height_mm: 202, outer_dia_mm: 50 },
-          { assy_pn: 'A49611199', total_height_mm: 192.2, outer_dia_mm: 56 },
-        ]);
-      }
-    } catch (error) {
-      console.error('Error loading weldment data:', error);
     }
   };
 
@@ -213,6 +193,38 @@ const ResultsPage = () => {
 
   const stats = calculateStatistics();
 
+  // Get visualization data for clustering
+  const getVisualizationData = () => {
+    if (!analysisResults?.clustering?.visualization_data) return [];
+    
+    const vizData = analysisResults.clustering.visualization_data;
+    const numericColumns = analysisResults.clustering.numeric_columns || [];
+    
+    console.log('Visualization data:', vizData);
+    console.log('Numeric columns:', numericColumns);
+    
+    if (numericColumns.length >= 2) {
+      // Use the first two numeric columns for visualization
+      const xKey = numericColumns[0];
+      const yKey = numericColumns[1];
+      console.log(`Using ${xKey} and ${yKey} for visualization`);
+      
+      return {
+        data: vizData,
+        xKey,
+        yKey
+      };
+    }
+    
+    return {
+      data: [],
+      xKey: '',
+      yKey: ''
+    };
+  };
+
+  const vizConfig = getVisualizationData();
+
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '50px' }}>
@@ -242,6 +254,7 @@ const ResultsPage = () => {
 
   const hasClusteringResults = analysisResults.clustering?.clusters?.length > 0;
   const hasBOMResults = analysisResults.bom_analysis?.similar_pairs?.length > 0;
+  const hasVisualizationData = vizConfig.data.length > 0;
 
   return (
     <div>
@@ -314,11 +327,18 @@ const ResultsPage = () => {
           <Col span={12}>
             <Card title="Cluster Visualization">
               <div className="cluster-visualization">
-                <ClusterChart 
-                  data={weldmentData}
-                  xKey="total_height_mm"
-                  yKey="outer_dia_mm"
-                />
+                {hasVisualizationData ? (
+                  <ClusterChart 
+                    data={vizConfig.data}
+                    xKey={vizConfig.xKey}
+                    yKey={vizConfig.yKey}
+                  />
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '50px' }}>
+                    <p>No visualization data available</p>
+                    <p><small>Need at least 2 numeric dimensions for clustering visualization</small></p>
+                  </div>
+                )}
               </div>
             </Card>
           </Col>
