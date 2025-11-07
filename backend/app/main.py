@@ -7,8 +7,11 @@ import os
 from typing import List, Dict, Any, Optional
 import uuid
 import re
-from sklearn.cluster import KMeans
+import numpy as np
+from sklearn.cluster import KMeans, DBSCAN
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import silhouette_score
+from scipy.cluster.hierarchy import linkage, fcluster
 
 app = FastAPI(title="BOM Optimization Tool", version="1.0.0")
 
@@ -96,17 +99,9 @@ def compute_bom_similarity(assembly_components: Dict[str, set]) -> Dict[str, Any
         for j, assy2 in enumerate(assemblies):
             set2 = assembly_components[assy2]
             
-            if i == j:
-                similarity = 100.0
-            else:
-                if len(set1) == 0 and len(set2) == 0:
-                    similarity = 100.0
-                elif len(set1) == 0 or len(set2) == 0:
-                    similarity = 0.0
-                else:
-                    intersection = len(set1.intersection(set2))
-                    union = len(set1.union(set2))
-                    similarity = (intersection / union) * 100
+            # Read the file again without header to see all data
+            df_raw = pd.read_excel(file_path, header=None)
+            print("Raw data shape:", df_raw.shape)
             
             similarity_matrix[assy1][assy2] = round(similarity, 2)
             
@@ -283,34 +278,81 @@ def parse_weldment_excel(file_path: str) -> pd.DataFrame:
         print(f"Error parsing Excel file: {str(e)}")
         raise
 
+def validate_weldment_columns(df: pd.DataFrame) -> bool:
+    """Validate that the DataFrame contains all required weldment columns (flexible matching)"""
+    print("Validating weldment columns...")
+    print("Columns received:", df.columns.tolist())
+
+    # Define required logical column keys and their expected keywords
+    required_patterns = {
+        "assy_pn": ["assy", "pn"],
+        "total_height_of_packed_tower_mm": ["total", "height", "packed", "tower"],
+        "packed_tower_outer_dia_mm": ["packed", "tower", "outer", "dia"],
+        "packed_tower_inner_dia_mm": ["packed", "tower", "inner", "dia"],
+        "upper_flange_outer_dia_mm": ["upper", "flange", "outer", "dia"],
+        "upper_flange_inner_dia_mm": ["upper", "flange", "inner", "dia"],
+        "lower_flange_outer_dia_mm": ["lower", "flange", "outer", "dia"],
+        "spray_nozzle_center_distance": ["spray", "nozzle", "center", "distance"],
+        "spray_nozzle_id": ["spray", "nozzle", "id"],
+        "support_ring_height_from_bottom": ["support", "ring", "height"],
+        "support_ring_id": ["support", "ring", "id"]
+    }
+
+    # Normalize and clean column names for comparison
+    cleaned_cols = [clean_column_name(col) for col in df.columns]
+
+    def matches_pattern(col: str, keywords: list[str]) -> bool:
+        return all(k in col for k in keywords)
+
+    missing_columns = []
+    for key, keywords in required_patterns.items():
+        if not any(matches_pattern(col, keywords) for col in cleaned_cols):
+            missing_columns.append(key)
+
+    if missing_columns:
+        print(f"Missing required columns: {missing_columns}")
+        print(f"Available columns: {cleaned_cols}")
+        return False
+
+    print("✅ All required columns are present")
+    return True
+
+
 def validate_weldment_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Validate and clean weldment data"""
+    """Validate and clean weldment dimension data"""
+    print("Validating weldment data...")
+    print("Input columns:", df.columns.tolist())
+    print("Data shape:", df.shape)
+
+    # Clean all column names once for consistency
+    df.columns = [clean_column_name(col) for col in df.columns]
+
+    # Check if required columns exist (using flexible validation)
+    if not validate_weldment_columns(df):
+        raise ValueError("Weldment file is missing required columns. Please ensure the file contains all 11 required columns.")
+
+    # Remove empty rows
     df = df.dropna(how='all')
-    
     if len(df) == 0:
         raise ValueError("No data found in the file")
-    
-    # Find Assy PN column
-    assy_pn_col = None
-    for col in df.columns:
-        if 'assy' in col.lower() or 'pn' in col.lower():
-            assy_pn_col = col
-            break
-    
-    if assy_pn_col is None:
-        assy_pn_col = df.columns[0]
-    
-    df = df.rename(columns={assy_pn_col: 'assy_pn'})
+
+    # Ensure 'assy_pn' column exists
+    if 'assy_pn' not in df.columns:
+        raise ValueError("Missing 'Assy PN' column after cleaning")
+
+    # Drop rows without Assy PN
     df = df.dropna(subset=['assy_pn'])
     df['assy_pn'] = df['assy_pn'].astype(str).str.strip()
-    
-    # Convert numeric columns
+
+    # Convert all other numeric columns
     numeric_columns = [col for col in df.columns if col != 'assy_pn']
     for col in numeric_columns:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    print(f"✅ Weldment data validated successfully. Shape: {df.shape}")
+    print("Final columns:", df.columns.tolist())
     return df
+
 
 def validate_bom_data(df: pd.DataFrame) -> pd.DataFrame:
     """Validate and clean BOM data"""
@@ -354,6 +396,23 @@ def validate_bom_data(df: pd.DataFrame) -> pd.DataFrame:
     if 'quantity' in df.columns:
         df['quantity'] = pd.to_numeric(df['quantity'], errors='coerce')
     
+    # Add assembly ID for grouping if not present
+    if 'assembly_id' not in df.columns:
+        # Try to infer assembly from component structure
+        if 'assy' in df.columns.tolist():
+            df = df.rename(columns={'assy': 'assembly_id'})
+        else:
+            # Group by level 0 components as assemblies
+            level_0_components = df[df['lev'] == 0]['component'].unique()
+            if len(level_0_components) > 0:
+                df['assembly_id'] = df['component'].apply(
+                    lambda x: next((comp for comp in level_0_components if str(comp) in str(x)), 'default_assembly')
+                )
+            else:
+                df['assembly_id'] = 'default_assembly'
+    
+    print(f"BOM data validated. Records: {len(df)}")
+    print("Assembly IDs:", df['assembly_id'].unique())
     return df
 
 # API Endpoints
@@ -381,7 +440,8 @@ async def upload_weldments(file: UploadFile = File(...)):
             "filename": file.filename,
             "data": validated_data.to_dict('records'),
             "columns": validated_data.columns.tolist(),
-            "record_count": len(validated_data)
+            "record_count": len(validated_data),
+            "dataframe": validated_data  # Store the actual DataFrame for analysis
         }
         
         return {
@@ -427,7 +487,8 @@ async def upload_boms(file: UploadFile = File(...)):
             "filename": file.filename,
             "data": validated_data.to_dict('records'),
             "columns": validated_data.columns.tolist(),
-            "record_count": len(validated_data)
+            "record_count": len(validated_data),
+            "dataframe": validated_data  # Store the actual DataFrame for analysis
         }
         
         return {
@@ -466,57 +527,141 @@ async def get_bom_files():
         for fid, data in bom_data.items()
     ]
 
+@app.get("/weldment-data/{file_id}")
+async def get_weldment_data(file_id: str):
+    """Get actual weldment data for visualization"""
+    if file_id not in weldment_data:
+        raise HTTPException(status_code=404, detail="Weldment file not found")
+    
+    return {
+        "data": weldment_data[file_id]["data"],
+        "columns": weldment_data[file_id]["columns"]
+    }
+
 @app.post("/analyze/dimensional-clustering/")
 async def analyze_dimensional_clustering(request: dict):
-    """Perform dimensional clustering analysis"""
+    """Perform dimensional clustering analysis with real data"""
     try:
         weldment_file_id = request.get('weldment_file_id')
+        clustering_method = request.get('clustering_method', 'kmeans')
+        n_clusters = request.get('n_clusters')
+        tolerance = request.get('tolerance', 0.1)
+        
         if weldment_file_id not in weldment_data:
             raise HTTPException(status_code=404, detail="Weldment file not found")
         
-        weldment_records = weldment_data[weldment_file_id]["data"]
-        df = pd.DataFrame(weldment_records)
+        # Get the actual DataFrame
+        df = weldment_data[weldment_file_id]["dataframe"]
         
-        numeric_cols = df.select_dtypes(include=['number']).columns
+        print("Clustering data columns:", df.columns.tolist())
+        print("Clustering data shape:", df.shape)
+        print("Data sample:", df.head())
+        
+        # Select numeric columns for clustering
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        print("Numeric columns for clustering:", numeric_cols)
         
         if len(numeric_cols) < 2:
             cluster_results = []
+            visualization_data = []
         else:
-            from sklearn.cluster import KMeans
-            from sklearn.preprocessing import StandardScaler
-            
+            # Prepare features for clustering
             features = df[numeric_cols].fillna(0)
+            
+            # Standardize features
             scaler = StandardScaler()
             scaled_features = scaler.fit_transform(features)
             
-            n_clusters = min(5, len(df) // 2) if len(df) > 1 else 1
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-            clusters = kmeans.fit_predict(scaled_features)
+            # Validate and convert n_clusters parameter
+            if n_clusters is not None:
+                try:
+                    # Convert to integer and validate range
+                    n_clusters = int(n_clusters)
+                    max_possible_clusters = len(df)
+                    if n_clusters < 2:
+                        n_clusters = 2
+                    elif n_clusters > max_possible_clusters:
+                        n_clusters = max_possible_clusters
+                        print(f"Warning: n_clusters reduced to {max_possible_clusters} (number of data points)")
+                except (ValueError, TypeError):
+                    print(f"Invalid n_clusters value: {n_clusters}, using automatic detection")
+                    n_clusters = None
+            
+            # Determine number of clusters if not provided or invalid
+            if n_clusters is None:
+                n_clusters = min(5, max(2, len(df) // 3))
+            
+            print(f"Using n_clusters: {n_clusters}")
+            
+            # Perform clustering based on method
+            if clustering_method == 'kmeans':
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+                clusters = kmeans.fit_predict(scaled_features)
+            elif clustering_method == 'hierarchical':
+                Z = linkage(scaled_features, method='ward')
+                clusters = fcluster(Z, n_clusters, criterion='maxclust') - 1
+            elif clustering_method == 'dbscan':
+                dbscan = DBSCAN(eps=0.5, min_samples=2)
+                clusters = dbscan.fit_predict(scaled_features)
+            else:
+                raise ValueError(f"Unsupported clustering method: {clustering_method}")
             
             df['cluster'] = clusters
             
             cluster_results = []
-            for cluster_id in range(n_clusters):
+            unique_clusters = np.unique(clusters)
+            
+            for cluster_id in unique_clusters:
+                if cluster_id == -1:  # Skip noise in DBSCAN
+                    continue
+                    
                 cluster_data = df[df['cluster'] == cluster_id]
                 if len(cluster_data) > 0:
+                    # Find representative (closest to centroid)
+                    if clustering_method == 'kmeans':
+                        centroid = kmeans.cluster_centers_[cluster_id]
+                        cluster_scaled = scaler.transform(cluster_data[numeric_cols].fillna(0))
+                        distances = np.linalg.norm(cluster_scaled - centroid, axis=1)
+                        representative_idx = distances.argmin()
+                    else:
+                        representative_idx = 0
+                    
+                    representative = cluster_data.iloc[representative_idx]['assy_pn']
+                    
                     cluster_results.append({
                         "cluster_id": int(cluster_id),
                         "member_count": len(cluster_data),
                         "members": cluster_data['assy_pn'].tolist(),
-                        "representative": cluster_data.iloc[0]['assy_pn'],
+                        "representative": representative,
                         "reduction_potential": max(0, len(cluster_data) - 1) / len(cluster_data) if len(cluster_data) > 0 else 0
                     })
+            
+            # Prepare visualization data with actual values
+            visualization_data = []
+            for _, row in df.iterrows():
+                point_data = {
+                    'assy_pn': row['assy_pn'],
+                    'cluster': int(row['cluster'])
+                }
+                # Add all numeric columns for visualization
+                for col in numeric_cols:
+                    point_data[col] = row[col] if not pd.isna(row[col]) else 0
+                visualization_data.append(point_data)
         
         analysis_id = generate_file_id()
         
+        # Store complete analysis results
         analysis_results[analysis_id] = {
+            "type": "clustering",
             "clustering": {
                 "clusters": cluster_results,
                 "metrics": {
                     "n_clusters": len(cluster_results),
                     "n_samples": len(df),
-                    "silhouette_score": 0.75
-                }
+                    "silhouette_score": silhouette_score(scaled_features, clusters) if len(unique_clusters) > 1 else 0
+                },
+                "visualization_data": visualization_data,
+                "numeric_columns": numeric_cols
             },
             "bom_analysis": {
                 "similar_pairs": [],
@@ -526,14 +671,8 @@ async def analyze_dimensional_clustering(request: dict):
         
         return {
             "analysis_id": analysis_id,
-            "clustering_result": {
-                "clusters": cluster_results,
-                "metrics": {
-                    "n_clusters": len(cluster_results),
-                    "n_samples": len(df),
-                    "silhouette_score": 0.75
-                }
-            }
+            "clustering_result": analysis_results[analysis_id]["clustering"],
+            "bom_analysis_result": analysis_results[analysis_id]["bom_analysis"]
         }
     
     except Exception as e:
@@ -541,38 +680,118 @@ async def analyze_dimensional_clustering(request: dict):
 
 @app.post("/analyze/bom-similarity/")
 async def analyze_bom_similarity(request: dict):
-    """Perform BOM similarity analysis"""
+    """Perform BOM similarity analysis with real data"""
     try:
         bom_file_id = request.get('bom_file_id')
+        similarity_method = request.get('similarity_method', 'jaccard')
+        threshold = request.get('threshold', 0.8)
+        
         if bom_file_id not in bom_data:
             raise HTTPException(status_code=404, detail="BOM file not found")
         
-        bom_records = bom_data[bom_file_id]["data"]
-        df = pd.DataFrame(bom_records)
+        # Get the actual DataFrame
+        df = bom_data[bom_file_id]["dataframe"]
         
-        print("Starting BOM analysis...")
-        analysis_result = analyze_bom_data(df)
+        print("BOM data for analysis:")
+        print(df.head())
+        print("Assemblies:", df['assembly_id'].unique())
+        
+        # Group by assembly and create BOM representations
+        assemblies = df['assembly_id'].unique()
+        bom_vectors = {}
+        
+        for assembly in assemblies:
+            assembly_bom = df[df['assembly_id'] == assembly]
+            # Create component-frequency dictionary
+            component_freq = {}
+            for _, row in assembly_bom.iterrows():
+                component = str(row['component'])
+                quantity = row.get('quantity', 1)
+                component_freq[component] = component_freq.get(component, 0) + quantity
+            bom_vectors[assembly] = component_freq
+        
+        print("BOM vectors created for assemblies:", list(bom_vectors.keys()))
+        
+        # Calculate similarity matrix
+        similarity_matrix = {}
+        similar_pairs = []
+        
+        all_components = set()
+        for bom in bom_vectors.values():
+            all_components.update(bom.keys())
+        
+        for i, assembly_a in enumerate(assemblies):
+            similarity_matrix[assembly_a] = {}
+            components_a = set(bom_vectors[assembly_a].keys())
+            
+            for j, assembly_b in enumerate(assemblies):
+                if i != j:
+                    components_b = set(bom_vectors[assembly_b].keys())
+                    
+                    # Calculate Jaccard similarity
+                    intersection = len(components_a.intersection(components_b))
+                    union = len(components_a.union(components_b))
+                    
+                    similarity = intersection / union if union > 0 else 0
+                    similarity_matrix[assembly_a][assembly_b] = similarity
+                    
+                    if similarity >= threshold:
+                        similar_pairs.append({
+                            "bom_a": assembly_a,
+                            "bom_b": assembly_b,
+                            "similarity_score": similarity,
+                            "common_components": intersection,
+                            "unique_components_a": list(components_a - components_b),
+                            "unique_components_b": list(components_b - components_a)
+                        })
+        
+        # Generate replacement suggestions
+        replacement_suggestions = []
+        for pair in similar_pairs[:5]:  # Limit to top 5
+            replacement_suggestions.append({
+                "type": "bom_consolidation",
+                "bom_a": pair["bom_a"],
+                "bom_b": pair["bom_b"],
+                "similarity_score": pair["similarity_score"],
+                "suggestion": f"Consider consolidating {pair['bom_a']} and {pair['bom_b']}",
+                "confidence": pair["similarity_score"],
+                "potential_savings": len(pair["unique_components_a"]) + len(pair["unique_components_b"])
+            })
         
         analysis_id = generate_file_id()
         
-        # Store results with proper structure
-        stored_results = {
+        # Store complete analysis results
+        analysis_results[analysis_id] = {
+            "type": "bom_analysis",
             "clustering": {
                 "clusters": [],
                 "metrics": {
                     "n_clusters": 0,
                     "n_samples": 0,
                     "silhouette_score": 0
-                }
+                },
+                "visualization_data": [],
+                "numeric_columns": []
             },
-            "bom_analysis": analysis_result
+            "bom_analysis": {
+                "similarity_matrix": similarity_matrix,
+                "similar_pairs": similar_pairs,
+                "replacement_suggestions": replacement_suggestions,
+                "bom_statistics": {
+                    "total_components": len(df),
+                    "unique_components": df['component'].nunique(),
+                    "total_assemblies": len(assemblies),
+                    "avg_components_per_assembly": len(df) / len(assemblies) if len(assemblies) > 0 else 0
+                }
+            }
         }
         
         analysis_results[analysis_id] = stored_results
         
         return {
             "analysis_id": analysis_id,
-            "bom_analysis_result": analysis_result  # Return just the BOM analysis part
+            "clustering_result": analysis_results[analysis_id]["clustering"],
+            "bom_analysis_result": analysis_results[analysis_id]["bom_analysis"]
         }
     
     except Exception as e:
@@ -584,6 +803,7 @@ async def get_analysis_results(analysis_id: str):
     """Get analysis results by ID"""
     if analysis_id not in analysis_results:
         raise HTTPException(status_code=404, detail="Analysis not found")
+    
     return analysis_results[analysis_id]
 
 @app.get("/")
