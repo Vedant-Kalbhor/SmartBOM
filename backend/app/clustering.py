@@ -103,23 +103,69 @@ def calculate_cluster_results(df: pd.DataFrame, clusters: np.ndarray,
     
     return results
 
+# def generate_cluster_visualization(df: pd.DataFrame, clusters: np.ndarray, 
+    #                              feature_columns: List[str]) -> Dict[str, Any]:
+    # """Generate cluster visualization data"""
+    # if len(feature_columns) < 2:
+    #     return {}
+    
+    # # Use first two features for 2D visualization
+    # x_feature, y_feature = feature_columns[:2]
+    
+    # fig = px.scatter(
+    #     df, x=x_feature, y=y_feature, color=clusters.astype(str),
+    #     title="Weldment Clustering Visualization",
+    #     labels={x_feature: x_feature, y_feature: y_feature},
+    #     hover_data=['assy_pn']
+    # )
+    
+    # return {
+    #     "plot_data": fig.to_json(),
+    #     "features_used": [x_feature, y_feature]
+    # }
+
 def generate_cluster_visualization(df: pd.DataFrame, clusters: np.ndarray, 
                                  feature_columns: List[str]) -> Dict[str, Any]:
-    """Generate cluster visualization data"""
-    if len(feature_columns) < 2:
+    """Generate cluster visualization using PCA if needed"""
+    if len(feature_columns) == 0:
         return {}
-    
-    # Use first two features for 2D visualization
-    x_feature, y_feature = feature_columns[:2]
-    
+
+    # Select numeric data for plotting
+    numeric_data = df[feature_columns].fillna(0).values
+
+    # If more than 2 numeric features → apply PCA for dimensionality reduction
+    if len(feature_columns) > 2:
+        pca = PCA(n_components=2)
+        reduced = pca.fit_transform(numeric_data)
+        x_feature, y_feature = "PCA_1", "PCA_2"
+        df_plot = pd.DataFrame({
+            x_feature: reduced[:, 0],
+            y_feature: reduced[:, 1],
+            "cluster": clusters.astype(str),
+            "assy_pn": df.get("assy_pn", None)
+        })
+        title = "Cluster Visualization (PCA-reduced from multiple features)"
+        features_used = feature_columns
+    else:
+        # Use first two features directly
+        x_feature, y_feature = feature_columns[:2]
+        df_plot = df.copy()
+        df_plot["cluster"] = clusters.astype(str)
+        title = "Cluster Visualization (using raw features)"
+        features_used = [x_feature, y_feature]
+
+    # Create scatter plot
     fig = px.scatter(
-        df, x=x_feature, y=y_feature, color=clusters.astype(str),
-        title="Weldment Clustering Visualization",
+        df_plot,
+        x=x_feature,
+        y=y_feature,
+        color="cluster",
+        title=title,
         labels={x_feature: x_feature, y_feature: y_feature},
-        hover_data=['assy_pn']
+        hover_data=["assy_pn"]
     )
-    
+
     return {
         "plot_data": fig.to_json(),
-        "features_used": [x_feature, y_feature]
+        "features_used": features_used
     }
