@@ -7,6 +7,7 @@ import os
 from typing import List, Dict, Any, Optional
 import uuid
 import re
+import json
 import numpy as np
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.preprocessing import StandardScaler
@@ -771,5 +772,6 @@ async def health_check():
     return {"status": "healthy"}
 
 if __name__ == "__main__":
+    
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
