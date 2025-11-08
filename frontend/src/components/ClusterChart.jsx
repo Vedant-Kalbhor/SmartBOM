@@ -151,41 +151,93 @@ export default function ClusterChart({ data }) {
   // ✅ Unique cluster IDs
   const clusters = [...new Set(data.map((d) => d.cluster))];
 
-  const COLORS = ["#8884d8", "#82ca9d", "#ffc658", "#ff8042", "#0088FE", "#00C49F"];
+  // 🎨 Updated, visually balanced color palette
+  const COLORS = [
+    "#4F46E5", // Indigo
+    "#10B981", // Emerald
+    "#F59E0B", // Amber
+    "#EF4444", // Red
+    "#3B82F6", // Blue
+    "#8B5CF6", // Violet
+  ];
 
   return (
-    <ResponsiveContainer width="100%" height={400}>
-      <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-        <CartesianGrid />
-        <XAxis
-          type="number"
-          dataKey={xKey}
-          name={xKey}
-          label={{ value: xKey, position: "bottom" }}
-        />
-        <YAxis
-          type="number"
-          dataKey={yKey}
-          name={yKey}
-          label={{ value: yKey, angle: -90, position: "left" }}
-        />
-        <Tooltip
-          cursor={{ strokeDasharray: "3 3" }}
-          formatter={(value, name) => [value.toFixed(3), name]}
-          contentStyle={{ backgroundColor: "#f9fafb", borderRadius: "8px" }}
-          labelFormatter={(label) => `Part: ${label}`}
-        />
-        <br />
-        <Legend />
-        {clusters.map((clusterId, i) => (
-          <Scatter
-            key={clusterId}
-            name={`Cluster ${clusterId}`}
-            data={data.filter((d) => d.cluster === clusterId)}
-            fill={COLORS[i % COLORS.length]}
+    <div className="bg-white shadow-md rounded-lg p-6">
+      <h2 className="text-lg font-semibold text-gray-700 mb-4 text-center">
+        Cluster Visualization
+      </h2>
+
+      <ResponsiveContainer width="100%" height={420}>
+        <ScatterChart
+          margin={{ top: 30, right: 30, bottom: 40, left: 50 }}
+        >
+          <CartesianGrid
+            stroke="#e5e7eb"
+            strokeDasharray="4 4"
+            vertical={false}
           />
-        ))}
-      </ScatterChart>
-    </ResponsiveContainer>
+          <XAxis
+            type="number"
+            dataKey={xKey}
+            name={xKey}
+            label={{
+              value: xKey,
+              position: "bottom",
+              offset: 0,
+              style: { fill: "#374151", fontSize: 13, fontWeight: 500 },
+            }}
+            tick={{ fill: "#6b7280", fontSize: 12 }}
+            axisLine={{ stroke: "#d1d5db" }}
+            tickLine={false}
+          />
+          <YAxis
+            type="number"
+            dataKey={yKey}
+            name={yKey}
+            label={{
+              value: yKey,
+              angle: -90,
+              position: "left",
+              style: { fill: "#374151", fontSize: 13, fontWeight: 500 },
+            }}
+            tick={{ fill: "#6b7280", fontSize: 12 }}
+            axisLine={{ stroke: "#d1d5db" }}
+            tickLine={false}
+          />
+          <Tooltip
+            cursor={{ strokeDasharray: "3 3" }}
+            formatter={(value, name) => [value.toFixed(3), name]}
+            contentStyle={{
+              backgroundColor: "#f9fafb",
+              border: "1px solid #e5e7eb",
+              borderRadius: "8px",
+              padding: "10px 12px",
+            }}
+            labelStyle={{ color: "#111827", fontWeight: 500 }}
+            itemStyle={{ color: "#374151" }}
+          />
+          <Legend
+            verticalAlign="top"
+            align="center"
+            wrapperStyle={{
+              paddingBottom: "15px",
+              fontSize: "13px",
+              color: "#374151",
+            }}
+          />
+
+          {clusters.map((clusterId, i) => (
+            <Scatter
+              key={clusterId}
+              name={`Cluster ${clusterId}`}
+              data={data.filter((d) => d.cluster === clusterId)}
+              fill={COLORS[i % COLORS.length]}
+              shape="circle"
+            />
+          ))}
+        </ScatterChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
+
