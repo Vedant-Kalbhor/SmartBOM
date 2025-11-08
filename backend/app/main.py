@@ -81,7 +81,7 @@ def preprocess_bom_file(bom_df: pd.DataFrame) -> pd.DataFrame:
     print(f"Identified {bom_df[bom_df['is_assembly']]['assembly_id'].nunique()} unique assemblies")
     return bom_df
 
-def compute_bom_similarity(assembly_components: Dict[str, set]) -> Dict[str, Any]:
+def compute_bom_similarity(assembly_components: Dict[str, set], threshold: float) -> Dict[str, Any]:
     """Compute BOM similarity between assemblies"""
     assemblies = list(assembly_components.keys())
     num_assemblies = len(assemblies)
@@ -99,36 +99,19 @@ def compute_bom_similarity(assembly_components: Dict[str, set]) -> Dict[str, Any
         for j, assy2 in enumerate(assemblies):
             set2 = assembly_components[assy2]
             
-            # Read the file again without header to see all data
-            df_raw = pd.read_excel(file_path, header=None)
-            print("Raw data shape:", df_raw.shape)
-            
-            # Look for the row that contains 'Assy PN' - this should be our header
-            header_row_idx = None
-            for idx in range(min(10, len(df_raw))):
-                row_values = df_raw.iloc[idx].values
-                if 'Assy PN' in str(row_values[0]):
-                    header_row_idx = idx
-                    break
-            
-            if header_row_idx is not None:
-                print(f"Found header at row {header_row_idx}")
-                # Read with the correct header row
-                df = pd.read_excel(file_path, header=header_row_idx)
-                print("Columns after header detection:", df.columns.tolist())
+            # Calculate Jaccard similarity - REMOVED the file reading code
+            if len(set1) == 0 and len(set2) == 0:
+                similarity = 100.0
+            elif len(set1) == 0 or len(set2) == 0:
+                similarity = 0.0
             else:
-                if len(set1) == 0 and len(set2) == 0:
-                    similarity = 100.0
-                elif len(set1) == 0 or len(set2) == 0:
-                    similarity = 0.0
-                else:
-                    intersection = len(set1.intersection(set2))
-                    union = len(set1.union(set2))
-                    similarity = (intersection / union) * 100
+                intersection = len(set1.intersection(set2))
+                union = len(set1.union(set2))
+                similarity = (intersection / union) * 100
             
             similarity_matrix[assy1][assy2] = round(similarity, 2)
             
-            if i < j and similarity > 70:
+            if i < j and similarity > threshold:
                 common_components = list(set1.intersection(set2))
                 unique_to_assy1 = list(set1 - set2)
                 unique_to_assy2 = list(set2 - set1)
@@ -136,7 +119,7 @@ def compute_bom_similarity(assembly_components: Dict[str, set]) -> Dict[str, Any
                 similar_pairs.append({
                     "bom_a": assy1,
                     "bom_b": assy2,
-                    "similarity_score": round(similarity / 100, 4),
+                    "similarity_score": round(similarity / 100, 4),  # Scale to 0-1 for frontend
                     "common_components": common_components[:10],  # Limit for serialization
                     "unique_components_a": unique_to_assy1[:10],
                     "unique_components_b": unique_to_assy2[:10],
@@ -232,7 +215,7 @@ def create_empty_bom_results() -> Dict[str, Any]:
         "clusters": []
     }
 
-def analyze_bom_data(bom_df: pd.DataFrame) -> Dict[str, Any]:
+def analyze_bom_data(bom_df: pd.DataFrame, threshold: float = 70.0) -> Dict[str, Any]:
     """Main BOM analysis function"""
     print("\n=== Starting BOM Analysis ===")
     
@@ -260,7 +243,7 @@ def analyze_bom_data(bom_df: pd.DataFrame) -> Dict[str, Any]:
         assembly_components[assembly] = components
     
     # Compute similarity
-    similarity_results = compute_bom_similarity(assembly_components)
+    similarity_results = compute_bom_similarity(assembly_components, threshold)
     
     # Generate additional results
     replacement_suggestions = generate_replacement_suggestions(similarity_results["similar_pairs"])
@@ -419,23 +402,33 @@ def validate_bom_data(df: pd.DataFrame) -> pd.DataFrame:
     if 'quantity' in df.columns:
         df['quantity'] = pd.to_numeric(df['quantity'], errors='coerce')
     
-    # Add assembly ID for grouping if not present
-    if 'assembly_id' not in df.columns:
-        # Try to infer assembly from component structure
-        if 'assy' in df.columns.tolist():
-            df = df.rename(columns={'assy': 'assembly_id'})
-        else:
-            # Group by level 0 components as assemblies
-            level_0_components = df[df['lev'] == 0]['component'].unique()
-            if len(level_0_components) > 0:
-                df['assembly_id'] = df['component'].apply(
-                    lambda x: next((comp for comp in level_0_components if str(comp) in str(x)), 'default_assembly')
-                )
-            else:
-                df['assembly_id'] = 'default_assembly'
+    # FIXED: Proper assembly ID creation using hierarchical structure
+    current_assembly = None
+    assembly_ids = []
     
-    print(f"BOM data validated. Records: {len(df)}")
-    print("Assembly IDs:", df['assembly_id'].unique())
+    for idx, row in df.iterrows():
+        lev = row['lev']
+        component = row['component']
+        
+        if lev == 0:
+            # This is a top-level assembly
+            current_assembly = component
+            assembly_ids.append(current_assembly)
+        else:
+            # This is a child component
+            if current_assembly is None:
+                # If no assembly found yet, use the component itself
+                current_assembly = component
+            assembly_ids.append(current_assembly)
+    
+    df['assembly_id'] = assembly_ids
+    df['is_assembly'] = df['lev'] == 0
+    
+    print(f"✅ BOM data validated successfully")
+    print(f"Total records: {len(df)}")
+    print(f"Unique assemblies: {df['assembly_id'].nunique()}")
+    print(f"Assemblies found: {df['assembly_id'].unique()}")
+    
     return df
 
 # API Endpoints
@@ -707,7 +700,7 @@ async def analyze_bom_similarity(request: dict):
     try:
         bom_file_id = request.get('bom_file_id')
         similarity_method = request.get('similarity_method', 'jaccard')
-        threshold = request.get('threshold', 0.8)
+        threshold = request.get('threshold', 0.7)  # Lowered threshold to find more matches
         
         if bom_file_id not in bom_data:
             raise HTTPException(status_code=404, detail="BOM file not found")
@@ -715,112 +708,52 @@ async def analyze_bom_similarity(request: dict):
         # Get the actual DataFrame
         df = bom_data[bom_file_id]["dataframe"]
         
-        print("BOM data for analysis:")
-        print(df.head())
-        print("Assemblies:", df['assembly_id'].unique())
+        print("=== Starting BOM Similarity Analysis ===")
+        print(f"BOM data shape: {df.shape}")
+        print(f"Assemblies found: {df['assembly_id'].unique()}")
         
-        # Group by assembly and create BOM representations
-        assemblies = df['assembly_id'].unique()
-        bom_vectors = {}
-        
-        for assembly in assemblies:
-            assembly_bom = df[df['assembly_id'] == assembly]
-            # Create component-frequency dictionary
-            component_freq = {}
-            for _, row in assembly_bom.iterrows():
-                component = str(row['component'])
-                quantity = row.get('quantity', 1)
-                component_freq[component] = component_freq.get(component, 0) + quantity
-            bom_vectors[assembly] = component_freq
-        
-        print("BOM vectors created for assemblies:", list(bom_vectors.keys()))
-        
-        # Calculate similarity matrix
-        similarity_matrix = {}
-        similar_pairs = []
-        
-        all_components = set()
-        for bom in bom_vectors.values():
-            all_components.update(bom.keys())
-        
-        for i, assembly_a in enumerate(assemblies):
-            similarity_matrix[assembly_a] = {}
-            components_a = set(bom_vectors[assembly_a].keys())
-            
-            for j, assembly_b in enumerate(assemblies):
-                if i != j:
-                    components_b = set(bom_vectors[assembly_b].keys())
-                    
-                    # Calculate Jaccard similarity
-                    intersection = len(components_a.intersection(components_b))
-                    union = len(components_a.union(components_b))
-                    
-                    similarity = intersection / union if union > 0 else 0
-                    similarity_matrix[assembly_a][assembly_b] = similarity
-                    
-                    if similarity >= threshold:
-                        similar_pairs.append({
-                            "bom_a": assembly_a,
-                            "bom_b": assembly_b,
-                            "similarity_score": similarity,
-                            "common_components": intersection,
-                            "unique_components_a": list(components_a - components_b),
-                            "unique_components_b": list(components_b - components_a)
-                        })
-        
-        # Generate replacement suggestions
-        replacement_suggestions = []
-        for pair in similar_pairs[:5]:  # Limit to top 5
-            replacement_suggestions.append({
-                "type": "bom_consolidation",
-                "bom_a": pair["bom_a"],
-                "bom_b": pair["bom_b"],
-                "similarity_score": pair["similarity_score"],
-                "suggestion": f"Consider consolidating {pair['bom_a']} and {pair['bom_b']}",
-                "confidence": pair["similarity_score"],
-                "potential_savings": len(pair["unique_components_a"]) + len(pair["unique_components_b"])
-            })
+        # Use the proper BOM analysis function
+        threshold_percent = threshold * 100
+        analysis_results = analyze_bom_data(df, threshold_percent)  # Pass the threshold
+
         
         analysis_id = generate_file_id()
         
         # Store complete analysis results
-        analysis_results[analysis_id] = {
+        analysis_results_store = {
             "type": "bom_analysis",
             "clustering": {
-                "clusters": [],
+                "clusters": analysis_results.get("clusters", []),
                 "metrics": {
-                    "n_clusters": 0,
-                    "n_samples": 0,
+                    "n_clusters": len(analysis_results.get("clusters", [])),
+                    "n_samples": len(df),
                     "silhouette_score": 0
                 },
                 "visualization_data": [],
                 "numeric_columns": []
             },
             "bom_analysis": {
-                "similarity_matrix": similarity_matrix,
-                "similar_pairs": similar_pairs,
-                "replacement_suggestions": replacement_suggestions,
-                "bom_statistics": {
-                    "total_components": len(df),
-                    "unique_components": df['component'].nunique(),
-                    "total_assemblies": len(assemblies),
-                    "avg_components_per_assembly": len(df) / len(assemblies) if len(assemblies) > 0 else 0
-                }
+                "similarity_matrix": analysis_results.get("similarity_matrix", {}),
+                "similar_pairs": analysis_results.get("similar_pairs", []),
+                "replacement_suggestions": analysis_results.get("replacement_suggestions", []),
+                "bom_statistics": analysis_results.get("bom_statistics", {})
             }
         }
         
-        analysis_results[analysis_id] = stored_results
+        # Store in global analysis results
+        analysis_results[analysis_id] = analysis_results_store
         
         return {
             "analysis_id": analysis_id,
-            "clustering_result": analysis_results[analysis_id]["clustering"],
-            "bom_analysis_result": analysis_results[analysis_id]["bom_analysis"]
+            "clustering_result": analysis_results_store["clustering"],
+            "bom_analysis_result": analysis_results_store["bom_analysis"]
         }
     
     except Exception as e:
         print(f"BOM analysis error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"BOM analysis failed: {str(e)}")
-
 @app.get("/analysis/{analysis_id}")
 async def get_analysis_results(analysis_id: str):
     """Get analysis results by ID"""
