@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Form, Input, Select, Button, Row, Col, message, Slider, Table } from 'antd';
-import { PlayCircleOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Select, Button, Row, Col, message, Slider, Table, Space } from 'antd';
+import { PlayCircleOutlined, RocketOutlined } from '@ant-design/icons';
 import { getWeldmentFiles, getBOMFiles, analyzeDimensionalClustering, analyzeBOMSimilarity } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 
@@ -11,7 +11,9 @@ const AnalysisPage = () => {
   const [bomForm] = Form.useForm();
   const [weldmentFiles, setWeldmentFiles] = useState([]);
   const [bomFiles, setBomFiles] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [clusteringLoading, setClusteringLoading] = useState(false);
+  const [bomLoading, setBomLoading] = useState(false);
+  const [combinedLoading, setCombinedLoading] = useState(false);
   const [analysisResults, setAnalysisResults] = useState(null);
   const navigate = useNavigate();
 
@@ -35,7 +37,7 @@ const AnalysisPage = () => {
 
   const onDimensionalAnalysis = async (values) => {
     try {
-      setLoading(true);
+      setClusteringLoading(true);
       console.log('Starting dimensional clustering with values:', values);
       
       const response = await analyzeDimensionalClustering(values);
@@ -56,15 +58,15 @@ const AnalysisPage = () => {
     } catch (error) {
       console.error('Dimensional analysis error:', error);
       const errorMessage = error.response?.data?.detail || error.message || 'Analysis failed';
-      message.error(`Analysis failed: ${errorMessage}`);
+      message.error(`Dimensional analysis failed: ${errorMessage}`);
     } finally {
-      setLoading(false);
+      setClusteringLoading(false);
     }
   };
 
   const onBOMAnalysis = async (values) => {
     try {
-      setLoading(true);
+      setBomLoading(true);
       console.log('Starting BOM analysis with values:', values);
       
       const response = await analyzeBOMSimilarity(values);
@@ -85,19 +87,99 @@ const AnalysisPage = () => {
     } catch (error) {
       console.error('BOM analysis error:', error);
       const errorMessage = error.response?.data?.detail || error.message || 'Analysis failed';
-      message.error(`Analysis failed: ${errorMessage}`);
+      message.error(`BOM analysis failed: ${errorMessage}`);
     } finally {
-      setLoading(false);
+      setBomLoading(false);
+    }
+  };
+
+  const onCombinedAnalysis = async () => {
+    try {
+      setCombinedLoading(true);
+      
+      // Get values from both forms
+      const clusteringValues = form.getFieldsValue();
+      const bomValues = bomForm.getFieldsValue();
+      
+      console.log('Starting combined analysis with clustering values:', clusteringValues);
+      console.log('Starting combined analysis with BOM values:', bomValues);
+      
+      // Validate that both forms have required files selected
+      if (!clusteringValues.weldment_file_id) {
+        message.error('Please select a weldment file for dimensional clustering');
+        setCombinedLoading(false);
+        return;
+      }
+      
+      if (!bomValues.bom_file_id) {
+        message.error('Please select a BOM file for similarity analysis');
+        setCombinedLoading(false);
+        return;
+      }
+      
+      // Run both analyses in parallel
+      const [clusteringResponse, bomResponse] = await Promise.all([
+        analyzeDimensionalClustering(clusteringValues),
+        analyzeBOMSimilarity(bomValues)
+      ]);
+      
+      console.log('Combined analysis - Clustering response:', clusteringResponse.data);
+      console.log('Combined analysis - BOM response:', bomResponse.data);
+      
+      // Create combined results object
+      const combinedResults = {
+        clustering: clusteringResponse.data.clustering_result,
+        bom_analysis: bomResponse.data.bom_analysis_result
+      };
+      
+      setAnalysisResults(combinedResults);
+      message.success('Both analyses completed successfully!');
+      
+      // Navigate to results page with combined analysis data
+      // Use clustering analysis ID as the primary ID
+      navigate(`/results/${clusteringResponse.data.analysis_id}`, { 
+        state: { 
+          analysisResults: combinedResults
+        } 
+      });
+      
+    } catch (error) {
+      console.error('Combined analysis error:', error);
+      const errorMessage = error.response?.data?.detail || error.message || 'Combined analysis failed';
+      message.error(`Combined analysis failed: ${errorMessage}`);
+    } finally {
+      setCombinedLoading(false);
     }
   };
 
   // Helper function to check if files are uploaded
   const hasWeldmentFiles = weldmentFiles.length > 0;
   const hasBomFiles = bomFiles.length > 0;
+  const hasBothFiles = hasWeldmentFiles && hasBomFiles;
 
   return (
     <div>
-      <h1>Analysis</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <h1>Analysis</h1>
+        
+        {/* Combined Analysis Button */}
+        {hasBothFiles && (
+          <Button 
+            type="primary" 
+            size="large"
+            icon={<RocketOutlined />}
+            onClick={onCombinedAnalysis}
+            loading={combinedLoading}
+            style={{ 
+              backgroundColor: '#52c41a', 
+              borderColor: '#52c41a',
+              fontWeight: 'bold'
+            }}
+          >
+            Run Complete Analysis
+          </Button>
+        )}
+      </div>
       
       {!hasWeldmentFiles && !hasBomFiles && (
         <Card style={{ marginBottom: 20 }}>
@@ -111,21 +193,59 @@ const AnalysisPage = () => {
         </Card>
       )}
 
+      {/* Combined Analysis Info Card */}
+      {hasBothFiles && (
+        <Card 
+          style={{ marginBottom: 20, border: '1px solid #d9d9d9' }}
+          bodyStyle={{ padding: '16px' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <h4 style={{ margin: 0, color: '#1890ff' }}>Complete Analysis Available</h4>
+              <p style={{ margin: '8px 0 0 0', color: '#666' }}>
+                You have both weldment and BOM files uploaded. Click "Run Complete Analysis" above to run both analyses together.
+              </p>
+            </div>
+            <Button 
+              type="link" 
+              icon={<RocketOutlined />}
+              onClick={onCombinedAnalysis}
+              loading={combinedLoading}
+            >
+              Run Both
+            </Button>
+          </div>
+        </Card>
+      )}
+
       <Row gutter={16}>
         <Col span={12}>
           <Card 
             title="Dimensional Clustering Analysis" 
-            loading={loading}
-            extra={
-              <Button 
-                type="primary" 
-                icon={<PlayCircleOutlined />}
-                onClick={() => form.submit()}
-                disabled={!hasWeldmentFiles}
-              >
-                Run Analysis
-              </Button>
-            }
+            loading={clusteringLoading}
+            // extra={
+            //   <Space>
+            //     {hasBothFiles && (
+            //       <Button 
+            //         type="dashed" 
+            //         size="small"
+            //         onClick={onCombinedAnalysis}
+            //         loading={combinedLoading}
+            //       >
+            //         Run Both
+            //       </Button>
+            //     )}
+            //     <Button 
+            //       type="primary" 
+            //       icon={<PlayCircleOutlined />}
+            //       onClick={() => form.submit()}
+            //       disabled={!hasWeldmentFiles}
+            //       loading={clusteringLoading}
+            //     >
+            //       Run Analysis
+            //     </Button>
+            //   </Space>
+            // }
           >
             {!hasWeldmentFiles ? (
               <div style={{ textAlign: 'center', padding: '20px' }}>
@@ -172,9 +292,14 @@ const AnalysisPage = () => {
                 <Form.Item
                   name="n_clusters"
                   label="Number of Clusters (optional)"
-                  help="Leave empty for automatic cluster detection"
+                  help="Leave empty for automatic cluster detection (2 ≤ k ≤ number of data points)"
                 >
-                  <Input type="number" min={2} max={20} placeholder="Auto-detect if empty" />
+                  <Input 
+                    type="number" 
+                    min={2} 
+                    max={hasWeldmentFiles ? Math.max(20, weldmentFiles.find(f => f.file_id === form.getFieldValue('weldment_file_id'))?.record_count || 20) : 20} 
+                    placeholder="Auto-detect if empty" 
+                  />
                 </Form.Item>
                 
                 <Form.Item
@@ -201,6 +326,7 @@ const AnalysisPage = () => {
                     icon={<PlayCircleOutlined />}
                     block
                     size="large"
+                    loading={clusteringLoading}
                   >
                     Run Dimensional Clustering
                   </Button>
@@ -213,17 +339,30 @@ const AnalysisPage = () => {
         <Col span={12}>
           <Card 
             title="BOM Similarity Analysis"
-            loading={loading}
-            extra={
-              <Button 
-                type="primary" 
-                icon={<PlayCircleOutlined />}
-                onClick={() => bomForm.submit()}
-                disabled={!hasBomFiles}
-              >
-                Run Analysis
-              </Button>
-            }
+            loading={bomLoading}
+            // extra={
+            //   <Space>
+            //     {hasBothFiles && (
+            //       <Button 
+            //         type="dashed" 
+            //         size="small"
+            //         onClick={onCombinedAnalysis}
+            //         loading={combinedLoading}
+            //       >
+            //         Run Both
+            //       </Button>
+            //     )}
+            //     <Button 
+            //       type="primary" 
+            //       icon={<PlayCircleOutlined />}
+            //       onClick={() => bomForm.submit()}
+            //       disabled={!hasBomFiles}
+            //       loading={bomLoading}
+            //     >
+            //       Run Analysis
+            //     </Button>
+            //   </Space>
+            // }
           >
             {!hasBomFiles ? (
               <div style={{ textAlign: 'center', padding: '20px' }}>
@@ -291,6 +430,7 @@ const AnalysisPage = () => {
                     icon={<PlayCircleOutlined />}
                     block
                     size="large"
+                    loading={bomLoading}
                   >
                     Run BOM Similarity Analysis
                   </Button>
@@ -365,6 +505,7 @@ const AnalysisPage = () => {
               <li>Use Hierarchical for nested cluster relationships</li>
               <li>Use DBSCAN for clusters with irregular shapes and noise</li>
               <li>Higher tolerance allows more dimensional variation within clusters</li>
+              <li><strong>Run Complete Analysis</strong> to combine with BOM similarity for comprehensive optimization</li>
             </ul>
           </Col>
           <Col span={12}>
@@ -374,6 +515,7 @@ const AnalysisPage = () => {
               <li>Cosine similarity considers component quantities</li>
               <li>Higher threshold shows only very similar BOMs</li>
               <li>Look for BOM pairs with similarity above 80% for consolidation</li>
+              <li><strong>Run Complete Analysis</strong> to get both dimensional and BOM insights together</li>
             </ul>
           </Col>
         </Row>

@@ -209,15 +209,15 @@ const UploadPage = () => {
           <Card 
             title="Upload Weldment Dimensions" 
             loading={loading}
-            extra={
-              <Button 
-                type="primary" 
-                icon={<UploadOutlined />}
-                onClick={() => document.querySelector('#weldment-upload input')?.click()}
-              >
-                Select File
-              </Button>
-            }
+            // extra={
+            //   <Button 
+            //     type="primary" 
+            //     icon={<UploadOutlined />}
+            //     onClick={() => document.querySelector('#weldment-upload input')?.click()}
+            //   >
+            //     Select File
+            //   </Button>
+            // }
           >
             <Dragger {...weldmentProps} id="weldment-upload">
               <p className="ant-upload-drag-icon">
@@ -251,15 +251,15 @@ const UploadPage = () => {
           <Card 
             title="Upload BOM Files" 
             loading={loading}
-            extra={
-              <Button 
-                type="primary" 
-                icon={<UploadOutlined />}
-                onClick={() => document.querySelector('#bom-upload input')?.click()}
-              >
-                Select File
-              </Button>
-            }
+            // extra={
+            //   <Button 
+            //     type="primary" 
+            //     icon={<UploadOutlined />}
+            //     onClick={() => document.querySelector('#bom-upload input')?.click()}
+            //   >
+            //     Select File
+            //   </Button>
+            // }
           >
             <Dragger {...bomProps} id="bom-upload">
               <p className="ant-upload-drag-icon">
