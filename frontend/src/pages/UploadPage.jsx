@@ -194,7 +194,7 @@ const UploadPage = () => {
         />
       )}
       
-      {serverStatus === 'healthy' && (
+      {/* {serverStatus === 'healthy' && (
         <Alert
           message="Backend Server Connected"
           description="The server is running and ready to accept file uploads."
@@ -202,7 +202,7 @@ const UploadPage = () => {
           showIcon
           style={{ marginBottom: 20 }}
         />
-      )}
+      )} */}
       
       <Row gutter={16} style={{ marginBottom: 20 }}>
         <Col span={12}>

@@ -159,7 +159,7 @@ const ResultsPage = () => {
       <Progress 
         percent={Math.round(score * 100)} 
         size="small" 
-        status={score > 0.9 ? 'success' : score > 0.7 ? 'active' : 'exception'}
+        status={score > 0.9 ? 'success' : score > 0.5 ? 'active' : 'exception'}
       />
     ),
   },
@@ -431,7 +431,7 @@ const ResultsPage = () => {
                 <Alert
                   key={index}
                   message={suggestion.suggestion}
-                  description={`Confidence: ${Math.round(suggestion.confidence * 100)}% | Potential Savings: ${suggestion.potential_savings} components`}
+                  description={`Confidence: ${Math.round(suggestion.confidence * 100)}% | Redundant Components: ${suggestion.potential_savings} components`}
                   type="info"
                   showIcon
                   style={{ marginBottom: 10 }}

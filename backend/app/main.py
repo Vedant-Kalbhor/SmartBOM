@@ -122,9 +122,9 @@ def compute_bom_similarity(assembly_components: Dict[str, set], threshold: float
                     "bom_a": assy1,
                     "bom_b": assy2,
                     "similarity_score": round(similarity / 100, 4),  # Scale to 0-1 for frontend
-                    "common_components": common_components[:10],  # Limit for serialization
-                    "unique_components_a": unique_to_assy1[:10],
-                    "unique_components_b": unique_to_assy2[:10],
+                    "common_components": common_components,  # Limit for number of common components[:10]
+                    "unique_components_a": unique_to_assy1,
+                    "unique_components_b": unique_to_assy2,
                     "common_count": len(common_components),
                     "unique_count_a": len(unique_to_assy1),
                     "unique_count_b": len(unique_to_assy2)
@@ -148,7 +148,7 @@ def generate_replacement_suggestions(similar_pairs: List[Dict]) -> List[Dict]:
         unique_b = pair["unique_count_b"]
         total_unique = unique_a + unique_b
         
-        potential_savings = min(total_unique * 10, 100)
+        potential_savings = pair["common_count"]
         
         suggestion = {
             "type": "bom_consolidation",
@@ -604,7 +604,7 @@ async def analyze_dimensional_clustering(request: dict):
         scaler = StandardScaler()
         scaled_features = scaler.fit_transform(features)
 
-        # Determine n_clusters safely
+        # Determine n_clusters safely (Find optimal number of clusters)
         if n_clusters is not None:
             try:
                 n_clusters = max(2, min(int(n_clusters), len(df)))
