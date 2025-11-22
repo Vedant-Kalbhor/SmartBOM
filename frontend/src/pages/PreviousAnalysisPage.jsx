@@ -1,151 +1,11 @@
-// import React, { useEffect, useState } from 'react';
-// import { Card, Table, Tag, Progress, Row, Col, Alert, Button, Spin, Modal, message } from 'antd';
-// import { DownloadOutlined, EyeOutlined, ClusterOutlined, BarChartOutlined } from '@ant-design/icons';
-// import { saveAs } from 'file-saver';
-// import ClusterChart from '../components/ClusterChart';
-// import { getAnalysisResults } from '../services/api';
-// import { useParams } from 'react-router-dom';
-
-// /** Updated PreviousAnalysisPage for new DB structure */
-// const PreviousAnalysisPage = () => {
-//   const { analysisId } = useParams();
-
-//   const [analysisResults, setAnalysisResults] = useState(null);
-//   const [loading, setLoading] = useState(true);
-//   const [clusterModalVisible, setClusterModalVisible] = useState(false);
-//   const [selectedCluster, setSelectedCluster] = useState(null);
-
-//   useEffect(() => {
-//     loadPastAnalysis();
-//   }, [analysisId]);
-
-//   const loadPastAnalysis = async () => {
-//     try {
-//       setLoading(true);
-//       const response = await getAnalysisResults(analysisId);
-//       const doc = response.data;
-//       setAnalysisResults(doc);
-//     } catch (err) {
-//       console.error(err);
-//       message.error('Could not load previous analysis');
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   if (loading) {
-//     return (
-//       <div style={{ textAlign: 'center', padding: 60 }}>
-//         <Spin size="large" />
-//         <p>Loading saved analysis...</p>
-//       </div>
-//     );
-//   }
-
-//   if (!analysisResults) {
-//     return (
-//       <div style={{ padding: 24 }}>
-//         <Alert
-//           message="Analysis not found"
-//           description="We couldn't find that saved analysis. Make sure the ID is correct."
-//           type="error"
-//           showIcon
-//         />
-//       </div>
-//     );
-//   }
-
-//   const raw = analysisResults.raw || {};
-
-//   // *** NEW CLUSTER FORMAT (Array of arrays) ****
-//   const clusterGroups = raw.clustering?.clusters || [];
-
-//   const normalizedClusterObjects = clusterGroups.map((members, idx) => ({
-//     cluster_id: idx + 1,
-//     members,
-//     member_count: members.length,
-//     representative: members[0] || '-',
-//     reduction_potential: 0
-//   }));
-
-//   const bom = raw.bom_analysis || {};
-
-//   const stats = {
-//     totalClusters: raw.clustering?.metrics?.n_clusters || normalizedClusterObjects.length,
-//     similarPairs: bom.similar_pairs?.length || 0,
-//     reductionPotential: 0
-//   };
-
-//   const clusterColumns = [
-//     { title: 'Cluster ID', dataIndex: 'cluster_id', key: 'cluster_id' },
-//     { title: 'Member Count', dataIndex: 'member_count', key: 'member_count' },
-//     { title: 'Representative', dataIndex: 'representative', key: 'representative', render: (r) => <Tag color="blue">{r}</Tag> },
-//     { title: 'Actions', key: 'actions', render: (_, rec) => <Button type="link" icon={<EyeOutlined />} onClick={() => { setSelectedCluster(rec); setClusterModalVisible(true); }}>View</Button> }
-//   ];
-
-//   const similarityColumns = [
-//     { title: 'BOM A', dataIndex: 'bom_a', key: 'bom_a' },
-//     { title: 'BOM B', dataIndex: 'bom_b', key: 'bom_b' },
-//     { title: 'Similarity', dataIndex: 'similarity_score', key: 'similarity_score', render: s => <Progress percent={Math.round((s||0) * 100)} size="small" /> },
-//     { title: 'Common Components', dataIndex: 'common_components', key: 'common_components', render: list => (list||[]).map((c,i) => <Tag key={i}>{c.component}</Tag>) }
-//   ];
-
-//   return (
-//     <div style={{ padding: 20 }}>
-//       <h2>Analysis Results (Updated)</h2>
-
-//       <Row gutter={16} style={{ marginBottom: 18 }}>
-//         <Col span={8}><Card><div style={{ fontSize: 18 }}>Clusters: {stats.totalClusters}</div></Card></Col>
-//         <Col span={8}><Card><div style={{ fontSize: 18 }}>Similar BOM Pairs: {stats.similarPairs}</div></Card></Col>
-//         <Col span={8}><Card><div style={{ fontSize: 18 }}>Reduction Potential: {stats.reductionPotential}%</div></Card></Col>
-//       </Row>
-
-//       <Card title="Clusters (New Format)">
-//         <Table
-//           columns={clusterColumns}
-//           dataSource={normalizedClusterObjects}
-//           rowKey="cluster_id"
-//           pagination={false}
-//         />
-//       </Card>
-
-//       <Card title="BOM Similarity" style={{ marginTop: 18 }}>
-//         <Table
-//           columns={similarityColumns}
-//           dataSource={bom.similar_pairs || []}
-//           rowKey={(r) => `${r.bom_a}-${r.bom_b}`}
-//           pagination={false}
-//         />
-//       </Card>
-
-//       <Modal
-//         open={clusterModalVisible}
-//         title={selectedCluster ? `Cluster ${selectedCluster.cluster_id}` : ''}
-//         onCancel={() => setClusterModalVisible(false)}
-//         footer={<Button onClick={() => setClusterModalVisible(false)}>Close</Button>}
-//         width={700}
-//       >
-//         {selectedCluster && (
-//           <>
-//             <p><strong>Representative:</strong> {selectedCluster.representative}</p>
-//             <p><strong>Member Count:</strong> {selectedCluster.member_count}</p>
-//             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-//               {selectedCluster.members.map((m, idx) => <Tag key={idx}>{m}</Tag>)}
-//             </div>
-//           </>
-//         )}
-//       </Modal>
-//     </div>
-//   );
-// };
-
-// export default PreviousAnalysisPage;
-
-
-// PreviousAnalysisPage.jsx
+// src/pages/PreviousAnalysisPage.jsx
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Tag, Progress, Row, Col, Alert, Button, Spin, Modal, message } from 'antd';
-import { DownloadOutlined, EyeOutlined, ClusterOutlined, BarChartOutlined } from '@ant-design/icons';
+import {
+  Card, Table, Tag, Progress, Row, Col, Alert, Button, Spin, Modal, message
+} from 'antd';
+import {
+  DownloadOutlined, EyeOutlined, ClusterOutlined, BarChartOutlined
+} from '@ant-design/icons';
 import { saveAs } from 'file-saver';
 import ClusterChart from '../components/ClusterChart';
 import { getAnalysisResults } from '../services/api';
@@ -153,9 +13,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 
 /**
  * PreviousAnalysisPage
- * - Loads saved analysis by ID and displays it using the same layout/controls as ResultsPage
- * - Normalizes different cluster formats (array-of-arrays or array-of-objects)
- * - Uses PCA PC1/PC2 if available for visualization, otherwise falls back to numeric columns
+ * - Loads saved analysis by ID and displays only relevant sections depending on analysis type:
+ *   - "clustering" => Weldment Clusters, Cluster Visualization
+ *   - "bom"        => BOM Similarity, Replacement Suggestions
+ *   - "combined"   => Shows both
+ * - Detects type from multiple possible fields returned by backend for robustness.
  */
 
 const PreviousAnalysisPage = () => {
@@ -178,7 +40,7 @@ const PreviousAnalysisPage = () => {
       setLoading(true);
       const response = await getAnalysisResults(analysisId);
       const doc = response.data;
-      // backend returns document with `raw` field - normalize to top-level shape
+      // Some backends nest under `raw`, some return top-level. Normalize to `raw`.
       const raw = doc?.raw ? doc.raw : doc;
       setAnalysisResults(raw);
     } catch (err) {
@@ -189,21 +51,22 @@ const PreviousAnalysisPage = () => {
     }
   };
 
-  // ---------- Normalization helpers ----------
+  // ---------- Helpers ----------
+
   const normalizeClusters = (clustersRaw) => {
     if (!clustersRaw) return [];
-    // If clustersRaw is array-of-objects already, assume correct
+    // Already array-of-objects
     if (clustersRaw.length > 0 && typeof clustersRaw[0] === 'object' && !Array.isArray(clustersRaw[0])) {
-      // ensure numeric cluster_id and member_count are present
       return clustersRaw.map((c, i) => ({
         cluster_id: c.cluster_id ?? (i + 1),
-        members: c.members ?? (c.member_list ?? []),
-        member_count: c.member_count ?? (c.members ? c.members.length : 0),
+        members: c.members ?? c.member_list ?? [],
+        member_count: c.member_count ?? (c.members ? c.members.length : (c.member_list ? c.member_list.length : 0)),
         representative: c.representative ?? (c.members && c.members[0]) ?? '-',
         reduction_potential: c.reduction_potential ?? 0
       }));
     }
-    // If array-of-arrays: [[m1,m2], [m3,m4], ...]
+
+    // array-of-arrays -> convert
     if (clustersRaw.length > 0 && Array.isArray(clustersRaw[0])) {
       return clustersRaw.map((members, i) => ({
         cluster_id: i + 1,
@@ -213,16 +76,17 @@ const PreviousAnalysisPage = () => {
         reduction_potential: 0
       }));
     }
-    // fallback empty
+
     return [];
   };
 
   const calculateStatistics = (results) => {
     if (!results) return { totalClusters: 0, similarPairs: 0, reductionPotential: 0 };
-    const clustersRaw = results?.clustering?.clusters || [];
+
+    const clustersRaw = results?.clustering?.clusters || results?.clustering_result?.clusters || [];
     const clusters = normalizeClusters(clustersRaw);
     const totalClusters = results?.clustering?.metrics?.n_clusters ?? clusters.length;
-    const similarPairs = results?.bom_analysis?.similar_pairs?.length ?? 0;
+    const similarPairs = results?.bom_analysis?.similar_pairs?.length ?? results?.bom_analysis_result?.similar_pairs?.length ?? 0;
 
     let reductionPotential = 0;
     if (clusters.length > 0) {
@@ -234,15 +98,14 @@ const PreviousAnalysisPage = () => {
   };
 
   const prepareVisualizationConfig = (results) => {
-    // prefer visualization_data with PC1/PC2 if present
-    const vizData = results?.clustering?.visualization_data ?? [];
-    const numericColumns = results?.clustering?.numeric_columns ?? [];
+    const vizData = results?.clustering?.visualization_data ?? results?.clustering_result?.visualization_data ?? [];
+    const numericColumns = results?.clustering?.numeric_columns ?? results?.clustering_result?.numeric_columns ?? [];
 
+    // prefer PC1/PC2
     if (vizData.length > 0 && ('PC1' in vizData[0] && 'PC2' in vizData[0])) {
       return { data: vizData, xKey: 'PC1', yKey: 'PC2' };
     }
 
-    // fallback to numeric columns if they exist in vizData items
     if (vizData.length > 0 && numericColumns.length >= 2) {
       return { data: vizData, xKey: numericColumns[0], yKey: numericColumns[1] };
     }
@@ -250,7 +113,34 @@ const PreviousAnalysisPage = () => {
     return { data: [], xKey: '', yKey: '' };
   };
 
+  const detectAnalysisType = (results) => {
+    // Try explicit fields first
+    const explicitType = results?.type || results?.analysis_type || results?.metadata?.type || results?.meta?.type;
+    if (explicitType) {
+      const t = explicitType.toString().toLowerCase();
+      if (t.includes('bom') && t.includes('cluster')) return 'combined';
+      if (t.includes('bom')) return 'bom';
+      if (t.includes('cluster') || t.includes('clustering') || t.includes('dimensional')) return 'clustering';
+    }
+
+    // Fallback: inspect content
+    const hasClustering = Boolean(
+      (results?.clustering && (results.clustering.clusters || results.clustering.visualization_data)) ||
+      (results?.clustering_result && (results.clustering_result.clusters || results.clustering_result.visualization_data))
+    );
+    const hasBOM = Boolean(
+      (results?.bom_analysis && (results.bom_analysis.similar_pairs || results.bom_analysis.replacement_suggestions)) ||
+      (results?.bom_analysis_result && (results.bom_analysis_result.similar_pairs || results.bom_analysis_result.replacement_suggestions))
+    );
+
+    if (hasClustering && hasBOM) return 'combined';
+    if (hasClustering) return 'clustering';
+    if (hasBOM) return 'bom';
+    return 'unknown';
+  };
+
   // ---------- Export handlers ----------
+
   const handleExportReport = () => {
     try {
       const reportData = {
@@ -269,7 +159,7 @@ const PreviousAnalysisPage = () => {
 
   const handleExportClusters = () => {
     try {
-      const clusters = normalizeClusters(analysisResults?.clustering?.clusters || []);
+      const clusters = normalizeClusters(analysisResults?.clustering?.clusters || analysisResults?.clustering_result?.clusters || []);
       if (!clusters || clusters.length === 0) {
         message.warning('No cluster data to export');
         return;
@@ -286,7 +176,6 @@ const PreviousAnalysisPage = () => {
         ])
       ];
 
-      // Quote and escape CSV values
       const csvContent = rows.map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       saveAs(blob, `clusters-${analysisId || 'latest'}.csv`);
@@ -297,7 +186,36 @@ const PreviousAnalysisPage = () => {
     }
   };
 
+  const handleExportSimilarPairs = () => {
+    try {
+      const pairs = analysisResults?.bom_analysis?.similar_pairs || analysisResults?.bom_analysis_result?.similar_pairs || [];
+      if (!pairs || pairs.length === 0) {
+        message.warning('No BOM similarity data to export');
+        return;
+      }
+
+      const rows = [
+        ['BOM A', 'BOM B', 'Similarity Score', 'Common Components Count'],
+        ...pairs.map(p => [
+          p.bom_a,
+          p.bom_b,
+          `${Math.round((p.similarity_score || 0) * 100)}%`,
+          Array.isArray(p.common_components) ? p.common_components.length : (p.common_components ? 1 : 0)
+        ])
+      ];
+
+      const csvContent = rows.map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      saveAs(blob, `bom-similarity-${analysisId || 'latest'}.csv`);
+      message.success('BOM similarity exported successfully');
+    } catch (error) {
+      console.error(error);
+      message.error('Failed to export BOM similarity');
+    }
+  };
+
   // ---------- Table column definitions ----------
+
   const clusterColumns = [
     { title: 'Cluster ID', dataIndex: 'cluster_id', key: 'cluster_id' },
     { title: 'Member Count', dataIndex: 'member_count', key: 'member_count' },
@@ -387,7 +305,8 @@ const PreviousAnalysisPage = () => {
     }
   ];
 
-  // ---------- render logic ----------
+  // ---------- Render logic ----------
+
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: 60 }}>
@@ -410,8 +329,8 @@ const PreviousAnalysisPage = () => {
     );
   }
 
-  // Use normalized clusters and stats
-  const clustersNormalized = normalizeClusters(analysisResults?.clustering?.clusters || []);
+  const type = detectAnalysisType(analysisResults); // 'clustering' | 'bom' | 'combined' | 'unknown'
+  const clustersNormalized = normalizeClusters(analysisResults?.clustering?.clusters || analysisResults?.clustering_result?.clusters || []);
   const stats = calculateStatistics(analysisResults);
   const vizConfig = prepareVisualizationConfig(analysisResults);
 
@@ -422,78 +341,111 @@ const PreviousAnalysisPage = () => {
       <Row gutter={16} style={{ marginBottom: 18 }}>
         <Col span={8}>
           <Card>
-            <div style={{ fontSize: 18 }}><ClusterOutlined style={{ marginRight: 6 }} />Clusters: {stats.totalClusters}</div>
+            <div style={{ fontSize: 18 }}>
+              <ClusterOutlined style={{ marginRight: 6 }} />
+              Clusters: {stats.totalClusters}
+            </div>
           </Card>
         </Col>
         <Col span={8}>
           <Card>
-            <div style={{ fontSize: 18 }}><BarChartOutlined style={{ marginRight: 6 }} />Similar BOM Pairs: {stats.similarPairs}</div>
+            <div style={{ fontSize: 18 }}>
+              <BarChartOutlined style={{ marginRight: 6 }} />
+              Similar BOM Pairs: {stats.similarPairs}
+            </div>
           </Card>
         </Col>
         <Col span={8}>
           <Card>
-            <div style={{ fontSize: 18 }}>Reduction Potential: {stats.reductionPotential}%</div>
+            <div style={{ fontSize: 18 }}>
+              Reduction Potential: {stats.reductionPotential}%
+            </div>
           </Card>
         </Col>
       </Row>
 
-      <Row gutter={16}>
-        <Col span={14}>
-          <Card
-            title="Weldment Clusters"
-            extra={
-              <div>
-                <Button icon={<DownloadOutlined />} onClick={handleExportReport} style={{ marginRight: 8 }}>Export Report</Button>
-                <Button icon={<DownloadOutlined />} onClick={handleExportClusters}>Export Clusters</Button>
-              </div>
-            }
-          >
+      {/* If analysis includes clustering (or combined) -> show clustering UI */}
+      {(type === 'clustering' || type === 'combined') && (
+        <Row gutter={16}>
+          <Col span={14}>
+            <Card
+              title="Weldment Clusters"
+              extra={
+                <div>
+                  <Button icon={<DownloadOutlined />} onClick={handleExportReport} style={{ marginRight: 8 }}>Export Report</Button>
+                  <Button icon={<DownloadOutlined />} onClick={handleExportClusters}>Export Clusters</Button>
+                </div>
+              }
+            >
+              <Table
+                columns={clusterColumns}
+                dataSource={clustersNormalized}
+                pagination={false}
+                size="small"
+                rowKey="cluster_id"
+              />
+            </Card>
+          </Col>
+
+          <Col span={10}>
+            <Card title="Cluster Visualization">
+              {vizConfig.data && vizConfig.data.length > 0 ? (
+                <ClusterChart data={vizConfig.data} xKey={vizConfig.xKey} yKey={vizConfig.yKey} />
+              ) : (
+                <div style={{ textAlign: 'center', padding: 40 }}>
+                  <p>No visualization data available</p>
+                  <p><small>Need at least 2 numeric dimensions or PC1/PC2 for visualization</small></p>
+                </div>
+              )}
+            </Card>
+          </Col>
+        </Row>
+      )}
+
+      {/* If analysis includes BOM similarity (or combined) -> show BOM UI */}
+      {(type === 'bom' || type === 'combined') && (
+        <>
+          <Card title="BOM Similarity" style={{ marginTop: 18 }}>
             <Table
-              columns={clusterColumns}
-              dataSource={clustersNormalized}
+              columns={similarityColumns}
+              dataSource={analysisResults?.bom_analysis?.similar_pairs || analysisResults?.bom_analysis_result?.similar_pairs || []}
               pagination={false}
-              size="small"
-              rowKey="cluster_id"
+              rowKey={(r, i) => `${r.bom_a || 'a'}-${r.bom_b || 'b'}-${i}`}
             />
           </Card>
-        </Col>
 
-        <Col span={10}>
-          <Card title="Cluster Visualization">
-            {vizConfig.data && vizConfig.data.length > 0 ? (
-              <ClusterChart data={vizConfig.data} xKey={vizConfig.xKey} yKey={vizConfig.yKey} />
-            ) : (
-              <div style={{ textAlign: 'center', padding: 40 }}>
-                <p>No visualization data available</p>
-                <p><small>Need at least 2 numeric dimensions or PC1/PC2 for visualization</small></p>
-              </div>
-            )}
-          </Card>
-        </Col>
-      </Row>
+          { (analysisResults?.bom_analysis?.replacement_suggestions || analysisResults?.bom_analysis_result?.replacement_suggestions || []).length > 0 && (
+            <Card title="Replacement Suggestions" style={{ marginTop: 18 }}>
+              {(analysisResults?.bom_analysis?.replacement_suggestions || analysisResults?.bom_analysis_result?.replacement_suggestions || []).map((sugg, idx) => (
+                <Alert
+                  key={idx}
+                  message={sugg.suggestion}
+                  description={`Confidence: ${Math.round((sugg.confidence || 0) * 100)}% | Redundant Components: ${sugg.potential_savings ?? 0}`}
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: 10 }}
+                />
+              ))}
+            </Card>
+          )}
+        </>
+      )}
 
-      <Card title="BOM Similarity" style={{ marginTop: 18 }}>
-        <Table
-          columns={similarityColumns}
-          dataSource={analysisResults?.bom_analysis?.similar_pairs || []}
-          pagination={false}
-          rowKey={(r, i) => `${r.bom_a || 'a'}-${r.bom_b || 'b'}-${i}`}
-        />
-      </Card>
-
-      {/* Replacement suggestions */}
-      {analysisResults?.bom_analysis?.replacement_suggestions?.length > 0 && (
-        <Card title="Replacement Suggestions" style={{ marginTop: 18 }}>
-          {analysisResults.bom_analysis.replacement_suggestions.map((sugg, idx) => (
-            <Alert
-              key={idx}
-              message={sugg.suggestion}
-              description={`Confidence: ${Math.round((sugg.confidence || 0) * 100)}% | Redundant Components: ${sugg.potential_savings ?? 0}`}
-              type="info"
-              showIcon
-              style={{ marginBottom: 10 }}
-            />
-          ))}
+      {/* Unknown type fallback */}
+      {type === 'unknown' && (
+        <Card style={{ marginTop: 18 }}>
+          <Alert
+            message="Unknown analysis type"
+            description="This analysis does not contain recognizable clustering or BOM similarity results. Displaying raw content may help debugging."
+            type="warning"
+            showIcon
+          />
+          <details style={{ marginTop: 12 }}>
+            <summary>Show raw response</summary>
+            <pre style={{ fontSize: 11, maxHeight: 300, overflow: 'auto' }}>
+              {JSON.stringify(analysisResults, null, 2)}
+            </pre>
+          </details>
         </Card>
       )}
 
