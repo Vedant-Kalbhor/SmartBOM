@@ -5,12 +5,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
 from scipy.cluster.hierarchy import linkage, fcluster
 from sklearn.decomposition import PCA
-from typing import Dict, Any, Optional
-# Add the following imports at top of clustering_utils.py (if not already present)
 from typing import List, Tuple, Optional, Dict, Any
 import math
 import string
-
 import re
 
 def clean_column_name(column_name: str) -> str:
@@ -364,16 +361,3 @@ def pairwise_variant_comparison(
         ])
 
     return formatted
-
-
-# -------------------------
-# Example usage (callable from your main pipeline)
-# -------------------------
-# Example:
-#   df = parse_weldment_excel('/path/to/Sample weldment dimension file.xlsx')
-#   df_valid = validate_weldment_data(df)          # your existing validator
-#   # restrict to the 11 dimension columns if you want:
-#   columns_to_compare = [c for c in df_valid.columns if c != 'assy_pn']
-#   results_df = pairwise_variant_comparison(df_valid, key_col='assy_pn', columns_to_compare=columns_to_compare, tolerance=0.1, threshold=30)
-#   # results_df now matches the screenshot-like format and can be returned to frontend as JSON:
-#   results_json = results_df.to_dict(orient='records')

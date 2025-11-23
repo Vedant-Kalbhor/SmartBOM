@@ -1,4 +1,3 @@
-// File: src/pages/BOMComparePage.jsx
 import React, { useMemo } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { Card, Row, Col, Tag, Button, Typography, Divider } from "antd";

@@ -372,12 +372,6 @@ const AnalysisPage = () => {
           </Card>
         </Col>
 
-        {/* spare column for alignment */}
-        {/* <Col span={12}>
-          <Card title="Info">
-            <p>Run individual analyses separately. Results open in dedicated result pages.</p>
-          </Card>
-        </Col> */}
       </Row>
     </div>
   );

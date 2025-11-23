@@ -1,4 +1,3 @@
-// ResultsPage.jsx
 import React, { useState, useEffect } from 'react';
 import { Card, Table, Tag, Progress, Row, Col, Alert, Button, Spin, Modal, message } from 'antd';
 import { DownloadOutlined, EyeOutlined, ClusterOutlined, BarChartOutlined } from '@ant-design/icons';

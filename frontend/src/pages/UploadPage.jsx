@@ -194,30 +194,13 @@ const UploadPage = () => {
         />
       )}
       
-      {/* {serverStatus === 'healthy' && (
-        <Alert
-          message="Backend Server Connected"
-          description="The server is running and ready to accept file uploads."
-          type="success"
-          showIcon
-          style={{ marginBottom: 20 }}
-        />
-      )} */}
       
       <Row gutter={16} style={{ marginBottom: 20 }}>
         <Col span={12}>
           <Card 
             title="Upload Weldment Dimensions" 
             loading={loading}
-            // extra={
-            //   <Button 
-            //     type="primary" 
-            //     icon={<UploadOutlined />}
-            //     onClick={() => document.querySelector('#weldment-upload input')?.click()}
-            //   >
-            //     Select File
-            //   </Button>
-            // }
+            
           >
             <Dragger {...weldmentProps} id="weldment-upload">
               <p className="ant-upload-drag-icon">
@@ -251,15 +234,6 @@ const UploadPage = () => {
           <Card 
             title="Upload BOM Files" 
             loading={loading}
-            // extra={
-            //   <Button 
-            //     type="primary" 
-            //     icon={<UploadOutlined />}
-            //     onClick={() => document.querySelector('#bom-upload input')?.click()}
-            //   >
-            //     Select File
-            //   </Button>
-            // }
           >
             <Dragger {...bomProps} id="bom-upload">
               <p className="ant-upload-drag-icon">
@@ -323,14 +297,6 @@ const UploadPage = () => {
               <li>Excel or CSV format</li>
             </ul>
             
-            {/* <h4>Troubleshooting:</h4>
-            <ul>
-              <li>Ensure files are not password protected</li>
-              <li>Check that required columns exist</li>
-              <li>Verify file is not corrupted</li>
-              <li>Make sure backend server is running</li>
-              <li>Check browser console for detailed errors</li>
-            </ul> */}
           </Col>
         </Row>
       </Card>
