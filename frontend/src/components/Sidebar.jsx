@@ -37,8 +37,9 @@ const Sidebar = () => {
 
   return (
     <div>
-      <div className="logo">
-        OptiMerge 
+      {/* <div className="logo"> */}
+      <div >
+        Menu Bar 
       </div>
       <Menu
         theme="dark"
