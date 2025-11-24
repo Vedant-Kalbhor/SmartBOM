@@ -286,6 +286,7 @@ async def analyze_bom_similarity(request: dict):
                 "similarity_matrix": bom_result.get("similarity_matrix", {}),
                 "similar_pairs": bom_result.get("similar_pairs", []),
                 "replacement_suggestions": bom_result.get("replacement_suggestions", []),
+                "component_replacement_table": bom_result.get("component_replacement_table", []),  # NEW
                 "bom_statistics": bom_result.get("bom_statistics", {})
             }
         }

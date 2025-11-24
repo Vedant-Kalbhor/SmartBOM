@@ -1,3 +1,4 @@
+// src/pages/BOMResultsPage.jsx
 import React, { useState, useEffect } from 'react';
 import { Card, Table, Tag, Progress, Alert, Button, Spin, message } from 'antd';
 import { DownloadOutlined, BarChartOutlined } from '@ant-design/icons';
@@ -168,6 +169,61 @@ const BOMResultsPage = () => {
         );
       }
     },
+    {
+      title: 'Details',
+      key: 'details',
+      width: 120,
+      render: (record) => (
+        <Button
+          size="small"
+          style={{
+            borderRadius: '6px',
+            padding: '0 10px',
+            fontSize: '12px',
+            background: '#f0f7ff',
+            border: '1px solid #91caff',
+            color: '#1677ff',
+            boxShadow: 'none'
+          }}
+          onClick={() =>
+            navigate(
+              `/results/bom/compare/${encodeURIComponent(record.bom_a)}/${encodeURIComponent(record.bom_b)}`,
+              { state: { pair: record } }
+            )
+          }
+        >
+          View Details
+        </Button>
+      )
+    },
+    // NEW COLUMN: View Replacement Suggestions
+    {
+      title: 'Replacement Suggestions',
+      key: 'replacements',
+      width: 170,
+      render: (record) => (
+        <Button
+          size="small"
+          style={{
+            borderRadius: '6px',
+            padding: '0 10px',
+            fontSize: '12px',
+            background: '#fff7e6',
+            border: '1px solid #ffd591',
+            color: '#d46b08',
+            boxShadow: 'none'
+          }}
+          onClick={() =>
+            navigate(
+              `/results/bom/replacements/${encodeURIComponent(analysisId)}/${encodeURIComponent(record.bom_a)}/${encodeURIComponent(record.bom_b)}`,
+              { state: { pair: record } }
+            )
+          }
+        >
+          View Replacements
+        </Button>
+      )
+    },
   ];
 
   if (loading) {
@@ -209,7 +265,9 @@ const BOMResultsPage = () => {
             </div>
             <div style={{ color: '#666', marginTop: 8 }}>Similar BOM Pairs</div>
           </div>
-          <Button icon={<DownloadOutlined />} onClick={handleExportSimilarPairs}>Export Similar Pairs</Button>
+          <Button icon={<DownloadOutlined />} onClick={handleExportSimilarPairs}>
+            Export Similar Pairs
+          </Button>
         </div>
       </Card>
 
