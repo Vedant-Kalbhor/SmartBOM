@@ -9,7 +9,7 @@ export function AuthProvider({ children }) {
   const [initializing, setInitializing] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("smartbom_token");
+    const token = localStorage.getItem("optimerge_token");
     if (!token) {
       setInitializing(false);
       return;
@@ -20,7 +20,7 @@ export function AuthProvider({ children }) {
         setUser(res.data);
       })
       .catch(() => {
-        localStorage.removeItem("smartbom_token");
+        localStorage.removeItem("optimerge_token");
       })
       .finally(() => setInitializing(false));
   }, []);
@@ -29,7 +29,7 @@ export function AuthProvider({ children }) {
     try {
       const res = await apiLogin({ email, password });
       const token = res.data.access_token;
-      localStorage.setItem("smartbom_token", token);
+      localStorage.setItem("optimerge_token", token);
 
       const me = await getCurrentUser();
       setUser(me.data);
@@ -55,7 +55,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    localStorage.removeItem("smartbom_token");
+    localStorage.removeItem("optimerge_token");
     setUser(null);
     message.info("Logged out");
   };

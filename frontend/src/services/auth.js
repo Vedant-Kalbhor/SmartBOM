@@ -7,7 +7,7 @@ const authApi = axios.create({
 });
 
 authApi.interceptors.request.use((config) => {
-  const token = localStorage.getItem("smartbom_token");
+  const token = localStorage.getItem("optimerge_token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

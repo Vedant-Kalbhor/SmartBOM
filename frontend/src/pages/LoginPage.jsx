@@ -29,7 +29,7 @@ const LoginPage = () => {
     >
       <Card style={{ width: 400 }}>
         <Title level={3} style={{ textAlign: "center", marginBottom: 24 }}>
-          SmartBOM Login
+          Login
         </Title>
 
         <Form form={form} layout="vertical" onFinish={onFinish}>
