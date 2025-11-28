@@ -1,11 +1,18 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import OAuth2PasswordBearer
 import pandas as pd
 import os
 import uuid
-from datetime import datetime
-from .db import analysis_collection
+from datetime import datetime, timedelta
+from typing import Optional
+
+from pydantic import BaseModel, EmailStr
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+
+from .db import analysis_collection, users_collection
 from bson import ObjectId
 
 # Import the modularized functions
@@ -21,7 +28,9 @@ from .bom_utils import (
 
 app = FastAPI(title="BOM Optimization Tool", version="1.0.0")
 
+# ==============================
 # CORS middleware
+# ==============================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:3000"],
@@ -29,6 +38,155 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ==============================
+# Auth / JWT configuration
+# ==============================
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-this-secret-in-production")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+
+# --------- Pydantic schemas ---------
+class UserBase(BaseModel):
+    email: EmailStr
+    full_name: Optional[str] = None
+
+
+class UserCreate(UserBase):
+    password: str
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserOut(UserBase):
+    id: str
+    is_active: bool = True
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class TokenData(BaseModel):
+    email: Optional[str] = None
+
+
+# --------- Auth utility functions ---------
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+def get_user_by_email(email: str) -> Optional[dict]:
+    return users_collection.find_one({"email": email})
+
+
+def authenticate_user(email: str, password: str) -> Optional[dict]:
+    user = get_user_by_email(email)
+    if not user:
+        return None
+    if not verify_password(password, user.get("hashed_password", "")):
+        return None
+    return user
+
+
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+        token_data = TokenData(email=email)
+    except JWTError:
+        raise credentials_exception
+
+    user = get_user_by_email(token_data.email)
+    if user is None:
+        raise credentials_exception
+    return user
+
+
+# ==============================
+# Auth endpoints
+# ==============================
+@app.post("/auth/signup", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+async def signup(user_in: UserCreate):
+    existing = get_user_by_email(user_in.email)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered.",
+        )
+
+    hashed_pw = get_password_hash(user_in.password)
+    doc = {
+        "email": user_in.email,
+        "full_name": user_in.full_name,
+        "hashed_password": hashed_pw,
+        "is_active": True,
+        "created_at": datetime.utcnow(),
+    }
+
+    result = users_collection.insert_one(doc)
+    return UserOut(
+        id=str(result.inserted_id),
+        email=user_in.email,
+        full_name=user_in.full_name,
+        is_active=True,
+    )
+
+
+@app.post("/auth/login", response_model=Token)
+async def login(user_in: UserLogin):
+    user = authenticate_user(user_in.email, user_in.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password.",
+        )
+
+    access_token = create_access_token(data={"sub": user["email"]})
+    return Token(access_token=access_token, token_type="bearer")
+
+
+@app.get("/auth/me", response_model=UserOut)
+async def read_current_user(current_user: dict = Depends(get_current_user)):
+    return UserOut(
+        id=str(current_user.get("_id")),
+        email=current_user.get("email"),
+        full_name=current_user.get("full_name"),
+        is_active=current_user.get("is_active", True),
+    )
+
+
+# ==============================
+# File uploads & analysis
+# ==============================
 
 # Create uploads directory
 os.makedirs("uploads", exist_ok=True)
@@ -39,8 +197,10 @@ weldment_data = {}
 bom_data = {}
 analysis_results = {}
 
+
 def generate_file_id():
     return str(uuid.uuid4())
+
 
 # -------------------------
 # File upload endpoints
@@ -354,8 +514,8 @@ def save_analysis_to_mongodb(analysis_id: str, analysis_type: str, result: dict)
         print(f"❌ Error saving to MongoDB: {str(e)}")
         # don't raise so API still returns results even if Mongo fails
 
-# --- add near other analyze endpoints in main.py ---
 
+# --- Weldment pairwise endpoint ---
 @app.post("/analyze/weldment-pairwise/")
 async def analyze_weldment_pairwise(request: dict):
     """
@@ -364,7 +524,7 @@ async def analyze_weldment_pairwise(request: dict):
       - weldment_file_id (str) required
       - tolerance (float) optional (defaults 1e-6)
       - threshold (float) optional (0-1 or 0-100) filter for minimum match% (defaults 0.3)
-      - include_self (bool) optional (defaults False)
+      - include_self (bool) optional (defaults True)
       - columns_to_compare (list) optional
     """
     try:

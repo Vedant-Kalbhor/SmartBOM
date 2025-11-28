@@ -1,19 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Row, Col, Statistic, Table, Progress, Alert, Button, Spin } from 'antd';
-import { UploadOutlined, ClusterOutlined, BarChartOutlined, RocketOutlined } from '@ant-design/icons';
+import { Card, Row, Col, Statistic, Table, Progress, Alert, Button, Spin, Space } from 'antd';
+import { UploadOutlined, ClusterOutlined, BarChartOutlined, RocketOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { getWeldmentFiles, getBOMFiles, getAnalysisResults, getRecentAnalyses } from '../services/api';
+import { getWeldmentFiles, getBOMFiles, getRecentAnalyses } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
     weldmentFiles: 0,
     bomFiles: 0,
     analyses: 0,
-    potentialSavings: 0
+    potentialSavings: 0,
   });
   const [recentAnalyses, setRecentAnalyses] = useState([]);
   const [loading, setLoading] = useState(true);
+
   const navigate = useNavigate();
+  const { user, logout } = useAuth();   // ⬅ GET USER & LOGOUT
 
   useEffect(() => {
     loadDashboardData();
@@ -24,29 +27,25 @@ const Dashboard = () => {
       setLoading(true);
       const [weldmentResponse, bomResponse] = await Promise.all([
         getWeldmentFiles(),
-        getBOMFiles()
+        getBOMFiles(),
       ]);
 
-      // Calculate real statistics
       const weldmentFiles = weldmentResponse.data?.length || 0;
       const bomFiles = bomResponse.data?.length || 0;
-      
-      // Calculate potential savings based on actual data
+
+      // Simple estimated savings
       let potentialSavings = 0;
       if (weldmentFiles > 0) {
-        // Simple calculation: more files = more potential for optimization
         potentialSavings = Math.min(50, weldmentFiles * 5 + bomFiles * 3);
       }
 
-      setStats({
+      setStats(prev => ({
+        ...prev,
         weldmentFiles,
         bomFiles,
-        analyses: recentAnalyses.length,
-        potentialSavings
-      });
+      }));
 
-      // Load recent analyses (in a real app, you'd have an endpoint for this)
-      loadRecentAnalyses();
+      await loadRecentAnalyses(potentialSavings);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
@@ -54,7 +53,7 @@ const Dashboard = () => {
     }
   };
 
-  const loadRecentAnalyses = async () => {
+  const loadRecentAnalyses = async (potentialSavings) => {
     try {
       const response = await getRecentAnalyses();
       const data = response.data || [];
@@ -63,13 +62,18 @@ const Dashboard = () => {
         id: item.id,
         type: item.type,
         date: item.date,
-        status: item.status
+        status: item.status,
       }));
 
       setRecentAnalyses(formatted);
-      setStats(prev => ({ ...prev, analyses: formatted.length }));
+
+      setStats(prev => ({
+        ...prev,
+        analyses: formatted.length,
+        potentialSavings,
+      }));
     } catch (err) {
-      console.error("Error loading previous analyses:", err);
+      console.error('Error loading previous analyses:', err);
     }
   };
 
@@ -81,9 +85,6 @@ const Dashboard = () => {
       case 'analysis':
         navigate('/analysis');
         break;
-      case 'results':
-        navigate('/results');
-        break;
       default:
         break;
     }
@@ -94,7 +95,7 @@ const Dashboard = () => {
       title: 'Analysis ID',
       dataIndex: 'id',
       key: 'id',
-      render: (id) => <span style={{ fontFamily: 'monospace' }}>{id}</span>
+      render: (id) => <span style={{ fontFamily: 'monospace' }}>{id}</span>,
     },
     {
       title: 'Type',
@@ -120,12 +121,7 @@ const Dashboard = () => {
       title: 'Action',
       key: 'action',
       render: (_, record) => (
-        <Button 
-          type="link" 
-          size="small"
-          // onClick={() => navigate(`/results/${record.id}`)}
-          onClick={() => navigate(`/previous/${record.id}`)}
-        >
+        <Button type="link" size="small" onClick={() => navigate(`/previous/${record.id}`)}>
           View Results
         </Button>
       ),
@@ -134,8 +130,26 @@ const Dashboard = () => {
 
   return (
     <div>
-      <h1>Dashboard</h1>
-      
+      {/* ===========================
+          TOP BAR: USER & LOGOUT BUTTON
+      ============================ */}
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
+        <h1>Dashboard</h1>
+
+        <Space>
+          {/* USER NAME */}
+          <span style={{ fontSize: 16 }}>
+            <UserOutlined style={{ marginRight: 6 }} />
+            {user?.full_name || user?.email}
+          </span>
+
+          {/* LOGOUT BUTTON */}
+          <Button type="primary" danger icon={<LogoutOutlined />} onClick={logout}>
+            Logout
+          </Button>
+        </Space>
+      </div>
+
       <Row gutter={16} style={{ marginBottom: 20 }}>
         <Col span={7}>
           <Card loading={loading}>
@@ -164,16 +178,6 @@ const Dashboard = () => {
             />
           </Card>
         </Col>
-        {/* <Col span={6}>
-          <Card>
-            <Statistic
-              title="Potential Savings"
-              value={stats.potentialSavings}
-              suffix="%"
-              prefix={<ClusterOutlined />}
-            />
-          </Card>
-        </Col> */}
       </Row>
 
       {stats.weldmentFiles === 0 && stats.bomFiles === 0 ? (
@@ -211,76 +215,66 @@ const Dashboard = () => {
               size="small"
               title="Upload Files"
               actions={[
-                <Button 
-                  type="link" 
-                  onClick={() => handleQuickAction('upload')}
-                  icon={<UploadOutlined />}
-                >
+                <Button type="link" onClick={() => handleQuickAction('upload')} icon={<UploadOutlined />}>
                   Go to Upload
-                </Button>
+                </Button>,
               ]}
             >
               Upload weldment dimensions and BOM files for analysis
               {stats.weldmentFiles > 0 && (
                 <div style={{ marginTop: 8 }}>
-                  <Progress 
-                    percent={100} 
-                    size="small" 
-                    status="success" 
+                  <Progress
+                    percent={100}
+                    size="small"
+                    status="success"
                     format={() => `${stats.weldmentFiles} files`}
                   />
                 </div>
               )}
             </Card>
           </Col>
+
           <Col span={8}>
             <Card
               size="small"
               title="Run Analysis"
               actions={[
-                <Button 
-                  type="link" 
-                  onClick={() => handleQuickAction('analysis')}
-                  icon={<RocketOutlined />}
-                >
+                <Button type="link" onClick={() => handleQuickAction('analysis')} icon={<RocketOutlined />}>
                   Run Analysis
-                </Button>
+                </Button>,
               ]}
             >
               Perform dimensional clustering and BOM similarity analysis
               {stats.analyses > 0 && (
                 <div style={{ marginTop: 8 }}>
-                  <Progress 
-                    percent={100} 
-                    size="small" 
-                    status="active" 
+                  <Progress
+                    percent={100}
+                    size="small"
+                    status="active"
                     format={() => `${stats.analyses} completed`}
                   />
                 </div>
               )}
             </Card>
           </Col>
+
           <Col span={8}>
             <Card
               size="small"
               title="View Results"
               actions={[
-                <Button 
-                  type="link" 
-                  onClick={() => handleQuickAction('results')}
-                  icon={<BarChartOutlined />}
-                >
+                <Button type="link" icon={<BarChartOutlined />} onClick={() => navigate('/previous')}>
                   View Results
-                </Button>
+                </Button>,
               ]}
             >
               Explore analysis results and optimization suggestions
               {stats.analyses > 0 && (
                 <div style={{ marginTop: 8 }}>
-                  <Progress 
-                    percent={stats.potentialSavings} 
-                    size="small" 
-                    status="active" 
+                  <Progress
+                    percent={stats.potentialSavings}
+                    size="small"
+                    status="active"
                     format={(percent) => `${percent}% savings`}
                   />
                 </div>

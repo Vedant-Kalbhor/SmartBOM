@@ -1,4 +1,3 @@
-// src/pages/WeldmentResultsPage.jsx
 import React, { useState, useEffect } from 'react';
 import { Card, Table, Tag, Progress, Alert, Button, Spin, message } from 'antd';
 import { DownloadOutlined } from '@ant-design/icons';

@@ -1,4 +1,3 @@
-// src/pages/BOMResultsPage.jsx
 import React, { useState, useEffect } from 'react';
 import { Card, Table, Tag, Progress, Alert, Button, Spin, message } from 'antd';
 import { DownloadOutlined, BarChartOutlined } from '@ant-design/icons';
