@@ -624,8 +624,8 @@ async def analyze_weldment_pairwise(request: dict):
                     "match_percentage": float(rec.get("Match percentage") or 0.0),
                     "matching_columns": rec.get("matching_cols_list") or [],
                     "unmatching_columns": rec.get("unmatching_cols_list") or [],
-                    "matching_columns_letters": rec.get("Matching Columns") or "",
-                    "unmatching_columns_letters": rec.get("Unmatching") or ""
+                    # "matching_columns_letters": rec.get("Matching Columns") or "",
+                    # "unmatching_columns_letters": rec.get("Unmatching") or ""
                 })
 
         # ---------------------------------------------------

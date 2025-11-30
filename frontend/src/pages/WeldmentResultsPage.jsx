@@ -76,9 +76,9 @@ const WeldmentResultsPage = () => {
           'Assembly A',
           'Assembly B',
           'Match %',
-          'Matching Letters',
+          // 'Matching Letters',
           'Matching Columns',
-          'Unmatching Letters',
+          // 'Unmatching Letters',
           'Cost A',
           'EAU A',
           'Cost B',
@@ -113,9 +113,9 @@ const WeldmentResultsPage = () => {
               `"${(r.bom_a || '').replace(/"/g, '""')}"`,
               `"${(r.bom_b || '').replace(/"/g, '""')}"`,
               `${r.match_percentage ?? 0}`,
-              `"${(r.matching_columns_letters || '').replace(/"/g, '""')}"`,
+              // `"${(r.matching_columns_letters || '').replace(/"/g, '""')}"`,
               `"${(r.matching_columns || []).join('; ').replace(/"/g, '""')}"`,
-              `"${(r.unmatching_columns_letters || '').replace(/"/g, '""')}"`,
+              // `"${(r.unmatching_columns_letters || '').replace(/"/g, '""')}"`,
               c.cost_a ?? '',
               c.eau_a ?? '',
               c.cost_b ?? '',
@@ -147,9 +147,9 @@ const WeldmentResultsPage = () => {
         'Assembly A',
         'Assembly B',
         'Match %',
-        'Matching Letters',
+        // 'Matching Letters',
         'Matching Columns',
-        'Unmatching Letters'
+        // 'Unmatching Letters'
       ];
       const csvRows = [
         header.join(','),
@@ -158,9 +158,9 @@ const WeldmentResultsPage = () => {
             `"${(r.bom_a || '').replace(/"/g, '""')}"`,
             `"${(r.bom_b || '').replace(/"/g, '""')}"`,
             `${r.match_percentage ?? 0}`,
-            `"${(r.matching_columns_letters || '').replace(/"/g, '""')}"`,
+            // `"${(r.matching_columns_letters || '').replace(/"/g, '""')}"`,
             `"${(r.matching_columns || []).join('; ').replace(/"/g, '""')}"`,
-            `"${(r.unmatching_columns_letters || '').replace(/"/g, '""')}"`,
+            // `"${(r.unmatching_columns_letters || '').replace(/"/g, '""')}"`,
           ].join(',')
         )
       ].join('\n');
