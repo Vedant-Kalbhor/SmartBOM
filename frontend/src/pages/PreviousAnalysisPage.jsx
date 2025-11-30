@@ -1,6 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Tag, Progress, Row, Col, Alert, Button, Spin, Modal, message } from 'antd';
-import { DownloadOutlined, EyeOutlined, ClusterOutlined, BarChartOutlined } from '@ant-design/icons';
+import {
+  Card,
+  Table,
+  Tag,
+  Progress,
+  Row,
+  Col,
+  Alert,
+  Button,
+  Spin,
+  Modal,
+  message,
+  Statistic
+} from 'antd';
+import {
+  DownloadOutlined,
+  EyeOutlined,
+  ClusterOutlined,
+  BarChartOutlined
+} from '@ant-design/icons';
 import { saveAs } from 'file-saver';
 import ClusterChart from '../components/ClusterChart';
 import { getAnalysisResults } from '../services/api';
@@ -107,17 +125,108 @@ const PreviousAnalysisPage = () => {
         message.warning('No weldment pairwise data to export');
         return;
       }
-      const header = ['Assembly A', 'Assembly B', 'Match %', 'Matching Letters', 'Matching Columns', 'Unmatching Letters'];
+
+      const hasCostSavings =
+        !!weld &&
+        !!weld.cost_savings &&
+        weld.cost_savings.has_cost_data &&
+        Array.isArray(weld.cost_savings.rows) &&
+        weld.cost_savings.rows.length > 0;
+
+      // If cost savings present, export enriched CSV (same structure as WeldmentResultsPage)
+      if (hasCostSavings) {
+        const savingsRows = weld.cost_savings.rows || [];
+        const header = [
+          'Assembly A',
+          'Assembly B',
+          'Match %',
+          // 'Matching Letters',
+          'Matching Columns',
+          // 'Unmatching Letters',
+          'Cost A',
+          'EAU A',
+          'Cost B',
+          'EAU B',
+          'Old Price',
+          'New Price',
+          'Old-New Price',
+          'Effective EAU',
+          'Recommended Assembly',
+          'Recommended Cost',
+          'Total Cost Before',
+          'Total Cost After',
+          'Cost Savings',
+          'Savings %'
+        ];
+
+        const keyFn = (a, b) => `${a}__${b}`;
+        const costMap = {};
+        savingsRows.forEach((r) => {
+          const k1 = keyFn(r.bom_a, r.bom_b);
+          const k2 = keyFn(r.bom_b, r.bom_a);
+          costMap[k1] = r;
+          costMap[k2] = r;
+        });
+
+        const csvRows = [
+          header.join(','),
+          ...rows.map((r) => {
+            const pairKey = keyFn(r.bom_a, r.bom_b);
+            const c = costMap[pairKey] || {};
+            return [
+              `"${(r.bom_a || '').replace(/"/g, '""')}"`,
+              `"${(r.bom_b || '').replace(/"/g, '""')}"`,
+              `${r.match_percentage ?? 0}`,
+              // `"${(r.matching_columns_letters || '').replace(/"/g, '""')}"`,
+              `"${(r.matching_columns || []).join('; ').replace(/"/g, '""')}"`,
+              // `"${(r.unmatching_columns_letters || '').replace(/"/g, '""')}"`,
+              c.cost_a ?? '',
+              c.eau_a ?? '',
+              c.cost_b ?? '',
+              c.eau_b ?? '',
+              c.old_price ?? '',
+              c.new_price ?? '',
+              c.old_new_price ?? '',
+              c.effective_eau ?? '',
+              c.recommended_assembly
+                ? `"${String(c.recommended_assembly).replace(/"/g, '""')}"`
+                : '',
+              c.recommended_cost ?? '',
+              c.total_cost_before ?? '',
+              c.total_cost_after ?? '',
+              c.cost_savings ?? '',
+              c.savings_percent ?? ''
+            ].join(',');
+          })
+        ].join('\n');
+
+        const blob = new Blob([csvRows], { type: 'text/csv;charset=utf-8;' });
+        saveAs(blob, `weldment-pairwise-cost-${analysisId || 'latest'}.csv`);
+        message.success('Exported CSV with cost savings');
+        return;
+      }
+
+      // Legacy export (no cost data) – original behavior
+      const header = [
+        'Assembly A',
+        'Assembly B',
+        'Match %',
+        'Matching Letters',
+        'Matching Columns',
+        'Unmatching Letters'
+      ];
       const csvRows = [
         header.join(','),
-        ...rows.map(r => [
-          `"${(r.bom_a || '').replace(/"/g, '""')}"`,
-          `"${(r.bom_b || '').replace(/"/g, '""')}"`,
-          `${(r.match_percentage || 0)}`,
-          `"${(r.matching_columns_letters || '').replace(/"/g, '""')}"`,
-          `"${(r.matching_columns || []).join('; ').replace(/"/g, '""')}"`,
-          `"${(r.unmatching_columns_letters || '').replace(/"/g, '""')}"`
-        ].join(','))
+        ...rows.map((r) =>
+          [
+            `"${(r.bom_a || '').replace(/"/g, '""')}"`,
+            `"${(r.bom_b || '').replace(/"/g, '""')}"`,
+            `${r.match_percentage || 0}`,
+            `"${(r.matching_columns_letters || '').replace(/"/g, '""')}"`,
+            `"${(r.matching_columns || []).join('; ').replace(/"/g, '""')}"`,
+            `"${(r.unmatching_columns_letters || '').replace(/"/g, '""')}"`,
+          ].join(',')
+        )
       ].join('\n');
 
       const blob = new Blob([csvRows], { type: 'text/csv;charset=utf-8;' });
@@ -133,30 +242,90 @@ const PreviousAnalysisPage = () => {
   const clusterColumns = [
     { title: 'Cluster ID', dataIndex: 'cluster_id', key: 'cluster_id' },
     { title: 'Member Count', dataIndex: 'member_count', key: 'member_count' },
-    { title: 'Representative', dataIndex: 'representative', key: 'representative', render: r => <Tag color="blue">{r}</Tag> },
-    { title: 'Reduction Potential', dataIndex: 'reduction_potential', key: 'reduction_potential', render: p => <Progress percent={Math.round((p || 0) * 100)} size="small" /> },
-    { title: 'Actions', key: 'actions', render: (_, rec) => <Button type="link" icon={<EyeOutlined />} onClick={() => { setSelectedCluster(rec); setClusterModalVisible(true); }}>View</Button> }
+    {
+      title: 'Representative',
+      dataIndex: 'representative',
+      key: 'representative',
+      render: (r) => <Tag color="blue">{r}</Tag>
+    },
+    {
+      title: 'Reduction Potential',
+      dataIndex: 'reduction_potential',
+      key: 'reduction_potential',
+      render: (p) => <Progress percent={Math.round((p || 0) * 100)} size="small" />
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_, rec) => (
+        <Button
+          type="link"
+          icon={<EyeOutlined />}
+          onClick={() => {
+            setSelectedCluster(rec);
+            setClusterModalVisible(true);
+          }}
+        >
+          View
+        </Button>
+      )
+    }
   ];
 
   const similarityColumns = [
     { title: 'BOM A', dataIndex: 'bom_a', key: 'bom_a' },
     { title: 'BOM B', dataIndex: 'bom_b', key: 'bom_b' },
-    { title: 'Similarity', dataIndex: 'similarity_score', key: 'similarity_score', render: s => <Progress percent={Math.round((s || 0) * 100)} size="small" /> },
-    { title: 'Common Components', dataIndex: 'common_components', key: 'common_components', render: list => (list || []).map((c,i) => <Tag key={i}>{c.component || c}</Tag>) }
+    {
+      title: 'Similarity',
+      dataIndex: 'similarity_score',
+      key: 'similarity_score',
+      render: (s) => <Progress percent={Math.round((s || 0) * 100)} size="small" />
+    },
+    {
+      title: 'Common Components',
+      dataIndex: 'common_components',
+      key: 'common_components',
+      render: (list) => (list || []).map((c, i) => <Tag key={i}>{c.component || c}</Tag>)
+    }
   ];
 
   const weldmentColumns = [
-    { title: 'Assembly A', dataIndex: 'bom_a', key: 'bom_a', render: t => <span style={{ fontFamily: 'monospace' }}>{t}</span> },
-    { title: 'Assembly B', dataIndex: 'bom_b', key: 'bom_b', render: t => <span style={{ fontFamily: 'monospace' }}>{t}</span> },
     {
-      title: 'Match %', dataIndex: 'match_percentage', key: 'match_percentage', render: val => {
+      title: 'Assembly A',
+      dataIndex: 'bom_a',
+      key: 'bom_a',
+      render: (t) => <span style={{ fontFamily: 'monospace' }}>{t}</span>
+    },
+    {
+      title: 'Assembly B',
+      dataIndex: 'bom_b',
+      key: 'bom_b',
+      render: (t) => <span style={{ fontFamily: 'monospace' }}>{t}</span>
+    },
+    {
+      title: 'Match %',
+      dataIndex: 'match_percentage',
+      key: 'match_percentage',
+      render: (val) => {
         // value in DB is already percent (e.g. 100, 90). Progress expects 0-100.
         const pct = Number(val) || 0;
-        return <Progress percent={Math.round(pct)} size="small" format={p => `${p.toFixed(1)}%`} />;
+        return (
+          <Progress
+            percent={Math.round(pct)}
+            size="small"
+            format={(p) => `${p.toFixed(1)}%`}
+          />
+        );
       }
     },
     // { title: 'Matching (letters)', dataIndex: 'matching_columns_letters', key: 'matching_columns_letters', render: v => <div style={{ fontFamily: 'monospace' }}>{v}</div> },
-    { title: 'Matching (columns)', dataIndex: 'matching_columns', key: 'matching_columns', render: arr => (Array.isArray(arr) ? arr.map((c,i) => <Tag key={i}>{c}</Tag>) : null) }
+    {
+      title: 'Matching (columns)',
+      dataIndex: 'matching_columns',
+      key: 'matching_columns',
+      render: (arr) =>
+        Array.isArray(arr) ? arr.map((c, i) => <Tag key={i}>{c}</Tag>) : null
+    }
   ];
 
   // ----------------- render -----------------
@@ -183,13 +352,243 @@ const PreviousAnalysisPage = () => {
   }
 
   // Determine type
-  const analysisType = raw.type || doc?.type || (raw.weldment_pairwise ? 'weldment_pairwise' : (raw.bom_analysis ? 'bom_analysis' : (raw.clustering ? 'clustering' : 'unknown')));
+  const analysisType =
+    raw.type ||
+    doc?.type ||
+    (raw.weldment_pairwise
+      ? 'weldment_pairwise'
+      : raw.bom_analysis
+      ? 'bom_analysis'
+      : raw.clustering
+      ? 'clustering'
+      : 'unknown');
+
   const stats = calculateStatistics(raw);
   const vizConfig = prepareVisualizationConfig(raw);
 
   // If this is weldment pairwise, render weldment UI
   if (analysisType === 'weldment_pairwise' || raw.weldment_pairwise) {
     const weld = raw.weldment_pairwise || raw.weldment_pairwise_result || raw;
+
+    const hasCostSavings =
+      !!weld &&
+      !!weld.cost_savings &&
+      weld.cost_savings.has_cost_data &&
+      Array.isArray(weld.cost_savings.rows) &&
+      weld.cost_savings.rows.length > 0;
+
+    const costColumns = hasCostSavings
+      ? [
+          {
+            title: 'Assembly A',
+            dataIndex: 'bom_a',
+            key: 'bom_a',
+            render: (t) => <span style={{ fontFamily: 'monospace' }}>{t}</span>
+          },
+          {
+            title: 'Assembly B',
+            dataIndex: 'bom_b',
+            key: 'bom_b',
+            render: (t) => <span style={{ fontFamily: 'monospace' }}>{t}</span>
+          },
+          {
+            title: 'Match %',
+            dataIndex: 'match_percentage',
+            key: 'match_percentage',
+            render: (val) => {
+              const pct = Number(val) || 0;
+              return <span style={{ color: '#52c41a' }}>{pct.toFixed(1)}%</span>;
+            }
+          },
+          {
+            title: 'Cost A',
+            dataIndex: 'cost_a',
+            key: 'cost_a',
+            render: (v) => (v != null ? Number(v).toLocaleString() : '-')
+          },
+          {
+            title: 'EAU A',
+            dataIndex: 'eau_a',
+            key: 'eau_a',
+            render: (v) => (v != null ? Number(v).toLocaleString() : '-')
+          },
+          {
+            title: 'Cost B',
+            dataIndex: 'cost_b',
+            key: 'cost_b',
+            render: (v) => (v != null ? Number(v).toLocaleString() : '-')
+          },
+          {
+            title: 'EAU B',
+            dataIndex: 'eau_b',
+            key: 'eau_b',
+            render: (v) => (v != null ? Number(v).toLocaleString() : '-')
+          },
+          {
+            title: 'Old-New Price',
+            dataIndex: 'old_new_price',
+            key: 'old_new_price',
+            render: (v) =>
+              v != null
+                ? Number(v).toLocaleString(undefined, {
+                    maximumFractionDigits: 2
+                  })
+                : '-'
+          },
+          {
+            title: 'EAU (Replaced)',
+            dataIndex: 'effective_eau',
+            key: 'effective_eau',
+            render: (v) => (v != null ? Number(v).toLocaleString() : '-')
+          },
+          {
+            title: 'Recommended Assembly',
+            dataIndex: 'recommended_assembly',
+            key: 'recommended_assembly',
+            render: (t) => <span style={{ fontFamily: 'monospace' }}>{t}</span>
+          },
+          {
+            title: 'Total Cost Before',
+            dataIndex: 'total_cost_before',
+            key: 'total_cost_before',
+            render: (v) =>
+              v != null
+                ? Number(v).toLocaleString(undefined, {
+                    maximumFractionDigits: 2
+                  })
+                : '-'
+          },
+          {
+            title: 'Total Cost After',
+            dataIndex: 'total_cost_after',
+            key: 'total_cost_after',
+            render: (v) =>
+              v != null
+                ? Number(v).toLocaleString(undefined, {
+                    maximumFractionDigits: 2
+                  })
+                : '-'
+          },
+          {
+            title: 'Cost Savings',
+            dataIndex: 'cost_savings',
+            key: 'cost_savings',
+            render: (v) =>
+              v != null
+                ? Number(v).toLocaleString(undefined, {
+                    maximumFractionDigits: 2
+                  })
+                : '-'
+          },
+          {
+            title: 'Savings %',
+            dataIndex: 'savings_percent',
+            key: 'savings_percent',
+            render: (v) => (v != null ? `${Number(v).toFixed(2)}%` : '-')
+          }
+        ]
+      : [];
+
+    // Advanced layout when cost/EAU info is present (mirrors WeldmentResultsPage)
+    if (hasCostSavings) {
+      const statsBlock = weld.cost_savings.statistics || {};
+      const totalPairs = weld.pairwise_table?.length || 0;
+      const totalPerfect = statsBlock.pair_count_100 || 0;
+      const totalSavings = statsBlock.total_cost_savings || 0;
+      const avgSavingsPercent = statsBlock.avg_savings_percent || 0;
+
+      return (
+        <div style={{ padding: 20 }}>
+          <h2>Previous Analysis Result (Weldment Pairwise)</h2>
+
+          {/* original top metrics row (unchanged) */}
+          <Row gutter={16} style={{ marginBottom: 18 }}>
+            <Col span={8}>
+              <Card>
+                <div style={{ fontSize: 18 }}>
+                  <ClusterOutlined style={{ marginRight: 6 }} />
+                  Pairs: {weld?.pairwise_table?.length || 0}
+                </div>
+              </Card>
+            </Col>
+            <Col span={8}>
+              <Card>
+                <div style={{ fontSize: 18 }}>
+                  <BarChartOutlined style={{ marginRight: 6 }} />
+                  Threshold: {weld?.parameters?.threshold_percent ?? '-'}
+                </div>
+              </Card>
+            </Col>
+            <Col span={8}>
+              <Card>
+                <div style={{ fontSize: 18 }}>
+                  Pair Count: {weld?.statistics?.pair_count ?? (weld?.pairwise_table?.length || 0)}
+                </div>
+              </Card>
+            </Col>
+          </Row>
+
+          {/* NEW summary stats for savings */}
+          <Card style={{ marginBottom: 20 }}>
+            <Row gutter={16} align="middle">
+              <Col xs={24} sm={12} md={6}>
+                <Statistic title="Pairs Above Threshold" value={totalPairs} />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <Statistic title="100% Matching Pairs" value={totalPerfect} />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <Statistic
+                  title="Total Savings (All Replacements)"
+                  value={totalSavings}
+                  precision={2}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <Statistic
+                  title="Avg Savings %"
+                  value={avgSavingsPercent}
+                  precision={2}
+                  suffix="%"
+                />
+              </Col>
+            </Row>
+
+            <div style={{ marginTop: 16, textAlign: 'right' }}>
+              <Button
+                icon={<DownloadOutlined />}
+                onClick={() => handleExportWeldmentCSV(weld)}
+              >
+                Export CSV (with cost)
+              </Button>
+            </div>
+          </Card>
+
+          <Card
+            title="Pairwise Dimension Comparison"
+            style={{ marginBottom: 20 }}
+          >
+            <Table
+              columns={weldmentColumns}
+              dataSource={weld?.pairwise_table || []}
+              pagination={false}
+              rowKey={(r, i) => `${r.bom_a || 'a'}-${r.bom_b || 'b'}-${i}`}
+            />
+          </Card>
+
+          <Card title="Cost & EAU Savings for 100% Matches">
+            <Table
+              columns={costColumns}
+              dataSource={weld.cost_savings.rows || []}
+              pagination={false}
+              rowKey={(r, i) => `cost-${r.bom_a || 'a'}-${r.bom_b || 'b'}-${i}`}
+            />
+          </Card>
+        </div>
+      );
+    }
+
+    // Legacy layout (no cost/EAU columns) – original behavior
     return (
       <div style={{ padding: 20 }}>
         <h2>Previous Analysis Result (Weldment Pairwise)</h2>
@@ -197,30 +596,58 @@ const PreviousAnalysisPage = () => {
         <Row gutter={16} style={{ marginBottom: 18 }}>
           <Col span={8}>
             <Card>
-              <div style={{ fontSize: 18 }}><ClusterOutlined style={{ marginRight: 6 }} />Pairs: {weld?.pairwise_table?.length || 0}</div>
+              <div style={{ fontSize: 18 }}>
+                <ClusterOutlined style={{ marginRight: 6 }} />
+                Pairs: {weld?.pairwise_table?.length || 0}
+              </div>
             </Card>
           </Col>
           <Col span={8}>
             <Card>
-              <div style={{ fontSize: 18 }}><BarChartOutlined style={{ marginRight: 6 }} />Threshold: {weld?.parameters?.threshold_percent ?? '-'}</div>
+              <div style={{ fontSize: 18 }}>
+                <BarChartOutlined style={{ marginRight: 6 }} />
+                Threshold: {weld?.parameters?.threshold_percent ?? '-'}
+              </div>
             </Card>
           </Col>
           <Col span={8}>
             <Card>
-              <div style={{ fontSize: 18 }}>Pair Count: {weld?.statistics?.pair_count ?? (weld?.pairwise_table?.length || 0)}</div>
+              <div style={{ fontSize: 18 }}>
+                Pair Count: {weld?.statistics?.pair_count ?? (weld?.pairwise_table?.length || 0)}
+              </div>
             </Card>
           </Col>
         </Row>
 
         <Card style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}
+          >
             <div>
-              <div style={{ fontSize: 22, fontWeight: 'bold', color: '#1890ff' }}>{weld?.pairwise_table?.length || 0} pairs</div>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 'bold',
+                  color: '#1890ff'
+                }}
+              >
+                {weld?.pairwise_table?.length || 0} pairs
+              </div>
               <div style={{ color: '#666' }}>Pairs above threshold</div>
             </div>
 
             <div>
-              <Button icon={<DownloadOutlined />} style={{ marginRight: 8 }} onClick={() => handleExportWeldmentCSV(weld)}>Export CSV</Button>
+              <Button
+                icon={<DownloadOutlined />}
+                style={{ marginRight: 8 }}
+                onClick={() => handleExportWeldmentCSV(weld)}
+              >
+                Export CSV
+              </Button>
             </div>
           </div>
         </Card>
@@ -248,9 +675,25 @@ const PreviousAnalysisPage = () => {
       <h2>Previous Analysis Result</h2>
 
       <Row gutter={16} style={{ marginBottom: 18 }}>
-        <Col span={8}><Card><div style={{ fontSize: 18 }}>Clusters: {stats.totalClusters}</div></Card></Col>
-        <Col span={8}><Card><div style={{ fontSize: 18 }}>Similar BOM Pairs: {stats.similarPairs}</div></Card></Col>
-        <Col span={8}><Card><div style={{ fontSize: 18 }}>Reduction Potential: {stats.reductionPotential}%</div></Card></Col>
+        <Col span={8}>
+          <Card>
+            <div style={{ fontSize: 18 }}>Clusters: {stats.totalClusters}</div>
+          </Card>
+        </Col>
+        <Col span={8}>
+          <Card>
+            <div style={{ fontSize: 18 }}>
+              Similar BOM Pairs: {stats.similarPairs}
+            </div>
+          </Card>
+        </Col>
+        <Col span={8}>
+          <Card>
+            <div style={{ fontSize: 18 }}>
+              Reduction Potential: {stats.reductionPotential}%
+            </div>
+          </Card>
+        </Col>
       </Row>
 
       <Row gutter={16}>
@@ -259,12 +702,29 @@ const PreviousAnalysisPage = () => {
             title="Weldment Clusters"
             extra={
               <div>
-                <Button icon={<DownloadOutlined />} onClick={() => { const blob = new Blob([JSON.stringify(raw, null, 2)], { type: 'application/json' }); saveAs(blob, `analysis-${analysisId || 'prev'}.json`); }} style={{ marginRight: 8 }}>Export Report</Button>
+                <Button
+                  icon={<DownloadOutlined />}
+                  onClick={() => {
+                    const blob = new Blob([JSON.stringify(raw, null, 2)], {
+                      type: 'application/json'
+                    });
+                    saveAs(blob, `analysis-${analysisId || 'prev'}.json`);
+                  }}
+                  style={{ marginRight: 8 }}
+                >
+                  Export Report
+                </Button>
               </div>
             }
           >
             {hasClusteringResults ? (
-              <Table columns={clusterColumns} dataSource={clustersNormalized} pagination={false} size="small" rowKey="cluster_id" />
+              <Table
+                columns={clusterColumns}
+                dataSource={clustersNormalized}
+                pagination={false}
+                size="small"
+                rowKey="cluster_id"
+              />
             ) : (
               <div style={{ textAlign: 'center', padding: 20 }}>
                 <p>No clustering results available.</p>
@@ -276,11 +736,20 @@ const PreviousAnalysisPage = () => {
         <Col span={10}>
           <Card title="Cluster Visualization">
             {hasViz ? (
-              <ClusterChart data={vizConfig.data} xKey={vizConfig.xKey} yKey={vizConfig.yKey} />
+              <ClusterChart
+                data={vizConfig.data}
+                xKey={vizConfig.xKey}
+                yKey={vizConfig.yKey}
+              />
             ) : (
               <div style={{ textAlign: 'center', padding: 40 }}>
                 <p>No visualization data available</p>
-                <p><small>Need at least 2 numeric dimensions or PC1/PC2 for visualization</small></p>
+                <p>
+                  <small>
+                    Need at least 2 numeric dimensions or PC1/PC2 for
+                    visualization
+                  </small>
+                </p>
               </div>
             )}
           </Card>
@@ -289,7 +758,12 @@ const PreviousAnalysisPage = () => {
 
       <Card title="BOM Similarity" style={{ marginTop: 18 }}>
         {hasBOMResults ? (
-          <Table columns={similarityColumns} dataSource={raw?.bom_analysis?.similar_pairs || []} pagination={false} rowKey={(r, i) => `${r.bom_a || 'a'}-${r.bom_b || 'b'}-${i}`} />
+          <Table
+            columns={similarityColumns}
+            dataSource={raw?.bom_analysis?.similar_pairs || []}
+            pagination={false}
+            rowKey={(r, i) => `${r.bom_a || 'a'}-${r.bom_b || 'b'}-${i}`}
+          />
         ) : (
           <div style={{ textAlign: 'center', padding: 20 }}>
             <p>No BOM similarity results available.</p>
@@ -297,21 +771,53 @@ const PreviousAnalysisPage = () => {
         )}
       </Card>
 
-      <Modal title={`Cluster ${selectedCluster?.cluster_id} Details`} open={clusterModalVisible} onCancel={() => setClusterModalVisible(false)} footer={[<Button key="close" onClick={() => setClusterModalVisible(false)}>Close</Button>]} width={600}>
+      <Modal
+        title={`Cluster ${selectedCluster?.cluster_id} Details`}
+        open={clusterModalVisible}
+        onCancel={() => setClusterModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setClusterModalVisible(false)}>
+            Close
+          </Button>
+        ]}
+        width={600}
+      >
         {selectedCluster && (
           <div>
-            <p><strong>Cluster ID:</strong> {selectedCluster.cluster_id}</p>
-            <p><strong>Member Count:</strong> {selectedCluster.member_count}</p>
-            <p><strong>Representative:</strong> <Tag color="blue">{selectedCluster.representative}</Tag></p>
-            <p><strong>Reduction Potential:</strong> {Math.round((selectedCluster.reduction_potential || 0) * 100)}%</p>
-            <p><strong>Members:</strong></p>
-            <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #d9d9d9', padding: 8 }}>
-              {selectedCluster.members.map((m, i) => <Tag key={i} style={{ margin: 2 }}>{m}</Tag>)}
+            <p>
+              <strong>Cluster ID:</strong> {selectedCluster.cluster_id}
+            </p>
+            <p>
+              <strong>Member Count:</strong> {selectedCluster.member_count}
+            </p>
+            <p>
+              <strong>Representative:</strong>{' '}
+              <Tag color="blue">{selectedCluster.representative}</Tag>
+            </p>
+            <p>
+              <strong>Reduction Potential:</strong>{' '}
+              {Math.round((selectedCluster.reduction_potential || 0) * 100)}%
+            </p>
+            <p>
+              <strong>Members:</strong>
+            </p>
+            <div
+              style={{
+                maxHeight: 200,
+                overflowY: 'auto',
+                border: '1px solid #d9d9d9',
+                padding: 8
+              }}
+            >
+              {selectedCluster.members.map((m, i) => (
+                <Tag key={i} style={{ margin: 2 }}>
+                  {m}
+                </Tag>
+              ))}
             </div>
           </div>
         )}
       </Modal>
-
     </div>
   );
 };
