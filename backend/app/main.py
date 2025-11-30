@@ -515,7 +515,6 @@ def save_analysis_to_mongodb(analysis_id: str, analysis_type: str, result: dict)
         print(f"❌ Error saving to MongoDB: {str(e)}")
         # don't raise so API still returns results even if Mongo fails
 
-
 # --- Weldment pairwise endpoint ---
 @app.post("/analyze/weldment-pairwise/")
 async def analyze_weldment_pairwise(request: dict):
@@ -527,25 +526,84 @@ async def analyze_weldment_pairwise(request: dict):
       - threshold (float) optional (0-1 or 0-100) filter for minimum match% (defaults 0.3)
       - include_self (bool) optional (defaults True)
       - columns_to_compare (list) optional
+
+    Logic:
+      * If file has the 11 required geometry columns, we compare ONLY those
+        (never Cost / EAU).
+      * If file ALSO has Cost + EAU:
+          - still compare only geometry
+          - find ~100% matches
+          - choose cheaper assembly as "recommended"
+          - Old price = expensive assembly cost
+          - New price = recommended (cheaper) assembly cost
+          - Old-New price = old - new
+          - EAU used = EAU of the old (expensive) assembly only
+          - Total Cost Before = old_price * old_eau
+          - Total Cost After  = new_price * old_eau
+          - Cost Savings = (old_price - new_price) * old_eau
+          - Savings %   = (old_price - new_price) / old_price * 100
     """
     try:
         weldment_file_id = request.get('weldment_file_id')
         tolerance = float(request.get('tolerance', 1e-6))
         threshold = request.get('threshold', 0.3)
         include_self = bool(request.get('include_self', True))
-        columns_to_compare = request.get('columns_to_compare', None)
+        columns_to_compare_req = request.get('columns_to_compare', None)
 
         if weldment_file_id not in weldment_data:
             raise HTTPException(status_code=404, detail="Weldment file not found")
 
         df = weldment_data[weldment_file_id]["dataframe"]
 
-        # normalize threshold: if user sent 0-1 convert to 0-100
+        # ---------------------------------------------------
+        # 1) Detect Cost & EAU columns (case-insensitive)
+        # ---------------------------------------------------
+        cost_col = None
+        eau_col = None
+        for col in df.columns:
+            col_l = str(col).strip().lower()
+            if col_l == "cost":
+                cost_col = col
+            if col_l == "eau":
+                eau_col = col
+
+        has_cost_data = cost_col is not None and eau_col is not None
+
+        # ---------------------------------------------------
+        # 2) Decide which columns to compare (ONLY geometry)
+        # ---------------------------------------------------
+        geometry_cols_set = {
+            "total_height_of_packed_tower_mm",
+            "packed_tower_outer_dia_mm",
+            "packed_tower_inner_dia_mm",
+            "upper_flange_outer_dia_mm",
+            "upper_flange_inner_dia_mm",
+            "lower_flange_outer_dia_mm",
+            "spray_nozzle_center_distance",
+            "spray_nozzle_id",
+            "support_ring_height_from_bottom",
+            "support_ring_id",
+        }
+        detected_geometry_cols = [c for c in df.columns if str(c) in geometry_cols_set]
+
+        if columns_to_compare_req and isinstance(columns_to_compare_req, list):
+            columns_to_compare = columns_to_compare_req
+        elif detected_geometry_cols:
+            columns_to_compare = detected_geometry_cols
+        else:
+            # fallback: let util decide
+            columns_to_compare = None
+
+        # ---------------------------------------------------
+        # 3) Normalize threshold 0–1 → 0–100
+        # ---------------------------------------------------
         threshold_percent = float(threshold)
         if threshold_percent <= 1.0:
             threshold_percent = threshold_percent * 100.0
 
-        # Use pairwise comparison util
+        # ---------------------------------------------------
+        # 4) Run pairwise comparison utility
+        # ---------------------------------------------------
         from .clustering_utils import pairwise_variant_comparison
 
         result_df = pairwise_variant_comparison(
@@ -570,6 +628,158 @@ async def analyze_weldment_pairwise(request: dict):
                     "unmatching_columns_letters": rec.get("Unmatching") or ""
                 })
 
+        # ---------------------------------------------------
+        # 5) Cost-savings (per suggested replacement)
+        # ---------------------------------------------------
+        cost_savings_block = {
+            "has_cost_data": False,
+            "rows": [],
+            "statistics": {}
+        }
+
+        if has_cost_data and len(pairwise_records) > 0:
+            # Build lookup by assy_pn -> cost, eau
+            cost_lookup = {}
+            for _, row in df.iterrows():
+                assy = row.get("assy_pn")
+                if pd.isna(assy):
+                    continue
+                key = str(assy)
+                try:
+                    cost_val = float(row.get(cost_col, 0) or 0)
+                except (TypeError, ValueError):
+                    cost_val = 0.0
+                try:
+                    eau_val = float(row.get(eau_col, 0) or 0)
+                except (TypeError, ValueError):
+                    eau_val = 0.0
+
+                cost_lookup[key] = {
+                    "cost": cost_val,
+                    "eau": eau_val
+                }
+
+            rows_cs = []
+            seen_pairs = set()
+            total_before = 0.0
+            total_after = 0.0
+            total_savings = 0.0
+
+            for rec in pairwise_records:
+                match_pct = float(rec.get("match_percentage") or 0.0)
+
+                # Treat anything >= 99.95 as 100% match
+                if match_pct < 99.95:
+                    continue
+
+                a = str(rec.get("bom_a") or "")
+                b = str(rec.get("bom_b") or "")
+                if not a or not b:
+                    continue
+
+                # avoid double counting A-B and B-A
+                pair_key = tuple(sorted((a, b)))
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+
+                data_a = cost_lookup.get(a)
+                data_b = cost_lookup.get(b)
+                if not data_a or not data_b:
+                    continue
+
+                cost_a = data_a["cost"]
+                cost_b = data_b["cost"]
+                eau_a = data_a["eau"]
+                eau_b = data_b["eau"]
+
+                # -------------------------------
+                # NEW REQUIRED LOGIC:
+                # Suggested replacement savings
+                # -------------------------------
+                if cost_a <= cost_b:
+                    # A is cheaper → recommended
+                    recommended_assembly = a
+                    recommended_cost = cost_a
+                    new_price = cost_a
+                    old_price = cost_b
+                    old_eau = eau_b  # only EAU of old (expensive) assembly
+                else:
+                    # B is cheaper → recommended
+                    recommended_assembly = b
+                    recommended_cost = cost_b
+                    new_price = cost_b
+                    old_price = cost_a
+                    old_eau = eau_a
+
+                price_diff = old_price - new_price  # Old - New Price
+
+                total_cost_before = old_price * old_eau
+                total_cost_after = new_price * old_eau
+                cost_saving = total_cost_before - total_cost_after  # = price_diff * old_eau
+                savings_percent = (
+                    (price_diff / old_price) * 100.0
+                    if old_price > 0 else 0.0
+                )
+
+                # -------------------------------
+                # OLD LOGIC (KEEP BUT COMMENTED)
+                # -------------------------------
+                # # Before: each assembly uses its own cost & EAU
+                # total_cost_before_old = cost_a * eau_a + cost_b * eau_b
+                # # After: move all demand to cheaper assembly
+                # min_cost = min(cost_a, cost_b)
+                # total_cost_after_old = min_cost * (eau_a + eau_b)
+                # cost_saving_old = total_cost_before_old - total_cost_after_old
+                # savings_percent_old = (
+                #     cost_saving_old / total_cost_before_old * 100.0
+                #     if total_cost_before_old > 0 else 0.0
+                # )
+
+                rows_cs.append({
+                    "bom_a": a,
+                    "bom_b": b,
+                    "match_percentage": match_pct,
+                    "cost_a": cost_a,
+                    "eau_a": eau_a,
+                    "cost_b": cost_b,
+                    "eau_b": eau_b,
+                    "recommended_assembly": recommended_assembly,
+                    "recommended_cost": recommended_cost,
+                    "old_price": old_price,
+                    "new_price": new_price,
+                    "old_new_price": price_diff,
+                    "effective_eau": old_eau,
+                    "total_cost_before": total_cost_before,
+                    "total_cost_after": total_cost_after,
+                    "cost_savings": cost_saving,
+                    "savings_percent": savings_percent,
+                })
+
+                total_before += total_cost_before
+                total_after += total_cost_after
+                total_savings += cost_saving
+
+            avg_savings_percent = (
+                sum(r["savings_percent"] for r in rows_cs) / len(rows_cs)
+                if rows_cs else 0.0
+            )
+
+            cost_savings_block = {
+                "has_cost_data": bool(rows_cs),
+                "rows": rows_cs,
+                "statistics": {
+                    "pair_count_100": len(rows_cs),
+                    "total_cost_before": total_before,
+                    "total_cost_after": total_after,
+                    "total_cost_savings": total_savings,
+                    "avg_savings_percent": avg_savings_percent
+                }
+            }
+
+        # ---------------------------------------------------
+        # 6) Store + return
+        # ---------------------------------------------------
         analysis_id = generate_file_id()
         analysis_store = {
             "type": "weldment_pairwise",
@@ -584,9 +794,11 @@ async def analyze_weldment_pairwise(request: dict):
                 "parameters": {
                     "threshold_percent": threshold_percent,
                     "tolerance": tolerance,
-                    "include_self": include_self
+                    "include_self": include_self,
+                    "columns_compared": columns_to_compare,
                 },
-                "statistics": {"pair_count": len(pairwise_records)}
+                "statistics": {"pair_count": len(pairwise_records)},
+                "cost_savings": cost_savings_block
             },
             "bom_analysis": {
                 "similar_pairs": [],
